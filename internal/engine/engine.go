@@ -35,6 +35,14 @@ type MessageOpts struct {
 	QuotedText        string   `json:"quotedText,omitempty"`        // texto da msg citada (preview)
 	Mentions          []string `json:"mentions,omitempty"`          // numeros/jids mencionados
 	LinkPreview       bool     `json:"linkPreview,omitempty"`       // texto: busca OG do 1o link
+	Forwarded         bool     `json:"forwarded,omitempty"`         // marca como encaminhada
+}
+
+// ForwardSource descreve a mensagem guardada que sera encaminhada.
+type ForwardSource struct {
+	Type  string
+	Body  string
+	Media *StoredMedia
 }
 
 // Media e um anexo a enviar. Filename so vale para documento; Seconds e
@@ -176,6 +184,7 @@ type Engine interface {
 	SendLocation(ctx context.Context, chatID string, loc Location) (SendResult, error)
 	SendContact(ctx context.Context, chatID string, cs []Contact) (SendResult, error)
 	SendPoll(ctx context.Context, chatID, name string, options []string, selectable int, opts MessageOpts) (SendResult, error)
+	Forward(ctx context.Context, toChatID string, src ForwardSource) (SendResult, error)
 
 	// --- operacoes sobre mensagens ---
 	SendReaction(ctx context.Context, ref MessageRef, emoji string) (SendResult, error)

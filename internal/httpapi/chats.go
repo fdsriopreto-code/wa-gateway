@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"wa-gateway/internal/engine"
+	"wa-gateway/internal/outbox"
 	"wa-gateway/internal/store"
 )
 
@@ -100,4 +102,50 @@ func (d Deps) messageDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	_, _ = w.Write(data)
+}
+
+type forwardReq struct {
+	queueOpts
+	Session   string `json:"session"`
+	ToChatID  string `json:"toChatId"`
+	MessageID string `json:"messageId"`
+}
+
+// POST /api/forwardMessage  {session, toChatId, messageId}
+// Encaminha uma mensagem guardada (texto ou mídia) para outro chat.
+func (d Deps) forwardMessage(w http.ResponseWriter, r *http.Request) {
+	var req forwardReq
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if req.ToChatID == "" || req.MessageID == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "toChatId e messageId sao obrigatorios")
+		return
+	}
+	if req.Session == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "session e obrigatorio")
+		return
+	}
+	rec, err := d.Store.GetMessage(r.Context(), req.Session, req.MessageID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "not_found", "mensagem nao encontrada no store (MESSAGE_STORE ligado?)")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	src := engine.ForwardSource{Type: rec.Type, Body: rec.Body, Media: rec.Media}
+	if req.Enqueue {
+		d.enqueue(w, r, req.Session, outbox.KindForward,
+			outbox.Args{ChatID: req.ToChatID, Forward: &src}, req.Delay)
+		return
+	}
+	eng, ok := d.engineFor(w, req.Session)
+	if !ok {
+		return
+	}
+	res, err := eng.Forward(r.Context(), req.ToChatID, src)
+	sendResp(w, res, err)
 }

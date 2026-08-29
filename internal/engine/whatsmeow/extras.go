@@ -2,6 +2,7 @@ package whatsmeow
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
@@ -17,12 +18,17 @@ import (
 	"wa-gateway/internal/engine"
 )
 
-// ctxInfo monta o ContextInfo comum (citacao + mencoes). nil se nao ha nada.
+// ctxInfo monta o ContextInfo comum (citacao + mencoes + encaminhada).
+// nil se nao ha nada.
 func ctxInfo(o engine.MessageOpts) *waProto.ContextInfo {
-	if o.QuotedID == "" && len(o.Mentions) == 0 {
+	if o.QuotedID == "" && len(o.Mentions) == 0 && !o.Forwarded {
 		return nil
 	}
 	ci := &waProto.ContextInfo{}
+	if o.Forwarded {
+		ci.IsForwarded = proto.Bool(true)
+		ci.ForwardingScore = proto.Uint32(1)
+	}
 	if o.QuotedID != "" {
 		ci.StanzaID = proto.String(o.QuotedID)
 		if o.QuotedParticipant != "" {
@@ -152,6 +158,58 @@ func (e *Engine) SendSticker(ctx context.Context, chatID string, data []byte, op
 		FileLength:    proto.Uint64(up.FileLength),
 		ContextInfo:   ctxInfo(opts),
 	}})
+}
+
+// Forward reenvia uma mensagem guardada para outro chat, marcada como
+// encaminhada. Midia e baixada e re-enviada (WhatsApp exige re-upload).
+func (e *Engine) Forward(ctx context.Context, toChatID string, src engine.ForwardSource) (engine.SendResult, error) {
+	fwd := engine.MessageOpts{Forwarded: true}
+
+	if src.Media == nil || src.Media.DirectPath == "" {
+		if src.Body == "" {
+			return engine.SendResult{}, errBadReq("mensagem guardada sem texto nem midia para encaminhar")
+		}
+		return e.SendText(ctx, toChatID, src.Body, fwd)
+	}
+
+	data, mime, err := e.DownloadMedia(ctx, *src.Media)
+	if err != nil {
+		return engine.SendResult{}, fmt.Errorf("baixar midia p/ encaminhar: %w", err)
+	}
+	m := engine.Media{Data: data, Mimetype: mime, Caption: src.Body, Filename: src.Media.Filename, Opts: fwd}
+	switch src.Type {
+	case "video":
+		return e.SendVideo(ctx, toChatID, m)
+	case "audio":
+		return e.SendAudio(ctx, toChatID, m)
+	case "document":
+		return e.SendFile(ctx, toChatID, m)
+	case "sticker":
+		return e.SendSticker(ctx, toChatID, data, fwd)
+	default: // image
+		client, cerr := e.currentClient()
+		if cerr != nil {
+			return engine.SendResult{}, cerr
+		}
+		up, uerr := client.Upload(ctx, data, whatsmeow.MediaImage)
+		if uerr != nil {
+			return engine.SendResult{}, fmt.Errorf("upload: %w", uerr)
+		}
+		if mime == "" {
+			mime = "image/jpeg"
+		}
+		return e.send(ctx, toChatID, &waProto.Message{ImageMessage: &waProto.ImageMessage{
+			Caption:       strPtrOrNil(src.Body),
+			Mimetype:      proto.String(mime),
+			URL:           proto.String(up.URL),
+			DirectPath:    proto.String(up.DirectPath),
+			MediaKey:      up.MediaKey,
+			FileEncSHA256: up.FileEncSHA256,
+			FileSHA256:    up.FileSHA256,
+			FileLength:    proto.Uint64(up.FileLength),
+			ContextInfo:   ctxInfo(fwd),
+		}})
+	}
 }
 
 func (e *Engine) SendPoll(ctx context.Context, chatID, name string, options []string, selectable int, opts engine.MessageOpts) (engine.SendResult, error) {

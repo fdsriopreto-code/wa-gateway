@@ -20,6 +20,7 @@ const (
 	KindLocation Kind = "location"
 	KindContact  Kind = "contact"
 	KindPoll     Kind = "poll"
+	KindForward  Kind = "forward"
 	KindReaction Kind = "reaction"
 	KindDelete   Kind = "delete"
 	KindEdit     Kind = "edit"
@@ -28,17 +29,18 @@ const (
 // Args e a uniao dos parametros possiveis de um envio. Cada Kind usa um
 // subconjunto; o resto fica nulo/zero e nao vai pro JSON.
 type Args struct {
-	ChatID   string             `json:"chatId,omitempty"`
-	Text     string             `json:"text,omitempty"`
-	Media    *engine.Media      `json:"media,omitempty"`
-	Location *engine.Location   `json:"location,omitempty"`
-	Contacts []engine.Contact   `json:"contacts,omitempty"`
-	Ref      *engine.MessageRef `json:"ref,omitempty"`
-	Emoji    string             `json:"emoji,omitempty"`
-	Opts     engine.MessageOpts `json:"opts,omitempty"`
-	PollName string             `json:"pollName,omitempty"`
-	PollOpts []string           `json:"pollOpts,omitempty"`
-	PollPick int                `json:"pollPick,omitempty"`
+	ChatID   string                `json:"chatId,omitempty"`
+	Text     string                `json:"text,omitempty"`
+	Media    *engine.Media         `json:"media,omitempty"`
+	Location *engine.Location      `json:"location,omitempty"`
+	Contacts []engine.Contact      `json:"contacts,omitempty"`
+	Ref      *engine.MessageRef    `json:"ref,omitempty"`
+	Emoji    string                `json:"emoji,omitempty"`
+	Opts     engine.MessageOpts    `json:"opts,omitempty"`
+	PollName string                `json:"pollName,omitempty"`
+	PollOpts []string              `json:"pollOpts,omitempty"`
+	PollPick int                   `json:"pollPick,omitempty"`
+	Forward  *engine.ForwardSource `json:"forward,omitempty"`
 }
 
 // Dispatch executa o job contra a engine ja resolvida.
@@ -59,6 +61,11 @@ func Dispatch(ctx context.Context, eng engine.Engine, kind Kind, a Args) (engine
 		return eng.SendSticker(ctx, a.ChatID, media(a).Data, a.Opts)
 	case KindPoll:
 		return eng.SendPoll(ctx, a.ChatID, a.PollName, a.PollOpts, a.PollPick, a.Opts)
+	case KindForward:
+		if a.Forward == nil {
+			return engine.SendResult{}, fmt.Errorf("forward ausente")
+		}
+		return eng.Forward(ctx, a.ChatID, *a.Forward)
 	case KindLocation:
 		if a.Location == nil {
 			return engine.SendResult{}, fmt.Errorf("location ausente")

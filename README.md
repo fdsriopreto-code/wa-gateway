@@ -28,8 +28,8 @@ teardown de Evolution API e WAHA — ver `../repos-analise/blueprint-wa-api-go.h
 | ✅ | Fase 2 — mídia S3/MinIO opcional (`MEDIA_BACKEND=s3`) + `GET /api/media/{id}` |
 | ✅ | Console web embarcado em `/` (sessões + QR, envio, grupos, contatos, fila, webhooks, eventos ao vivo, API keys) |
 | ✅ | Fase 2 — reply/menções/link preview, sticker, enquete, parear-por-código, perfil (`/me`, recado, presença, block), grupo (foto/announce/locked) |
-| ✅ | Fase 2 — persistência de mensagens/chats (`MESSAGE_STORE=on`): `/api/chats`, histórico, `/api/messages/{id}/download` |
-| ⬜ | Fase 2 (resto): `forwardMessage`, labels do Business |
+| ✅ | Fase 2 — persistência de mensagens/chats (`MESSAGE_STORE=on`): `/api/chats`, histórico, `/api/messages/{id}/download`, `forwardMessage` |
+| ⬜ | Fase 2 (resto): labels do Business |
 | ⬜ | Fase 3: multi-sessão por processo + roteamento entre nós + fan-out WS via Redis |
 | ⬜ | Fase 4: servidor MCP, plugin NATS/AMQP, conector de bot |
 
@@ -134,6 +134,7 @@ ou `...@g.us`. Mídia via `data` (base64 puro ou data URI).
 | GET | `/api/chats?session=&limit=` | conversas guardadas (histórico) |
 | GET | `/api/chats/{chatId}/messages?session=&limit=&before=` | histórico de uma conversa |
 | GET | `/api/messages/{id}/download?session=` | baixa a mídia de uma mensagem guardada |
+| POST | `/api/forwardMessage` | `{session, toChatId, messageId}` — encaminha (marca como encaminhada) |
 
 ## Fila de saída (anti-ban)
 

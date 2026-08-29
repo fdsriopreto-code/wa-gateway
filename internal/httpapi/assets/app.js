@@ -266,6 +266,9 @@ const ENDPOINTS=[
   {g:"Mensagens",m:"POST",path:"/api/sendContact",title:"Enviar contato",custom:"contact",fields:[
     ["session","session",{req:1}],["chatId","text",{req:1}],
     ["name","text",{req:1,ph:"nome do contato"}],["phone","text",{ph:"+55…"}]]},
+  {g:"Mensagens",m:"POST",path:"/api/forwardMessage",title:"Encaminhar mensagem guardada",fields:[
+    ["session","session",{req:1}],["toChatId","text",{req:1,ph:"destino …@s.whatsapp.net"}],["messageId","text",{req:1}],
+    ["enqueue","bool",{}],["delay","text",{ph:"30s"}]]},
   {g:"Mensagens",m:"POST",path:"/api/reaction",title:"Reagir",fields:[
     ["session","session",{req:1}],["chatId","text",{req:1}],["messageId","text",{req:1}],
     ["emoji","text",{ph:'👍  ("" remove)'}],["fromMe","bool",{}],["senderId","text",{ph:"grupo: jid do autor"}]]},

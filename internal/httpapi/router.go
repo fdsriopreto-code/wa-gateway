@@ -89,6 +89,7 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		r.Get("/api/chats", d.listChats)
 		r.Get("/api/chats/{chatId}/messages", d.chatMessages)
 		r.Get("/api/messages/{id}/download", d.messageDownload)
+		r.Post("/api/forwardMessage", d.forwardMessage)
 
 		// --- contatos ---
 		r.Route("/api/contacts", func(r chi.Router) {
