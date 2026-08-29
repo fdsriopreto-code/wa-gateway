@@ -19,6 +19,15 @@ func (d Deps) health(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ready e o probe de readiness: 200 só quando o Postgres responde.
+func (d Deps) ready(w http.ResponseWriter, r *http.Request) {
+	if d.Store.Pool.Ping(r.Context()) != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ready": false, "database": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ready": true, "database": true})
+}
+
 func (d Deps) version(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"name":    "wa-gateway",

@@ -175,6 +175,7 @@ func run() error {
 		Hub:         hub,
 		Queue:       outQueue,
 		Media:       mediaStore,
+		Cache:       rc,
 		Log:         log,
 		Version:     version,
 		Commit:      commit,

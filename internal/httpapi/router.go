@@ -25,12 +25,18 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 
 	// publico
 	r.Get("/health", d.health)
+	r.Get("/ready", d.ready)
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 	r.Get("/api/version", d.version)
+	r.Get("/openapi.json", d.openapiJSON)
+	r.Get("/docs", d.docsPage)
 
 	// autenticado
 	r.Group(func(r chi.Router) {
 		r.Use(authn.Middleware)
+		if d.Cache != nil {
+			r.Use(idempotencyMW(d.Cache))
+		}
 
 		r.Route("/api/sessions", func(r chi.Router) {
 			r.Get("/", d.listSessions)
@@ -50,6 +56,7 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		r.Get("/api/{session}/auth/qr", d.sessionQR)
 		r.Get("/api/{session}/auth/qr.png", d.sessionQRImage)
 		r.Post("/api/sessions/{session}/auth/pair-code", d.pairCode)
+		r.Post("/api/sessions/{session}/webhook/test", d.webhookTest)
 
 		// --- perfil / conta ---
 		r.Get("/api/{session}/me", d.me)

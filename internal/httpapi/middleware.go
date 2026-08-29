@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -9,8 +10,64 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"wa-gateway/internal/auth"
+	"wa-gateway/internal/cache"
 	"wa-gateway/internal/observability"
 )
+
+// idempotencyMW: POST com header `Idempotency-Key` e cacheado no Redis por
+// 10 min. Retentativas (ex.: do n8n) devolvem a mesma resposta sem re-executar.
+func idempotencyMW(rc *cache.Redis) func(http.Handler) http.Handler {
+	type cached struct {
+		Status int    `json:"s"`
+		Body   string `json:"b"`
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			key := r.Header.Get("Idempotency-Key")
+			if key == "" || r.Method != http.MethodPost || rc == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+			p, _ := auth.FromContext(r.Context())
+			ck := "idem:" + p.KeyID + ":" + key
+
+			var hit cached
+			if ok, _ := rc.GetJSON(r.Context(), ck, &hit); ok {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Idempotency-Replayed", "true")
+				w.WriteHeader(hit.Status)
+				_, _ = w.Write([]byte(hit.Body))
+				return
+			}
+			cw := &captureWriter{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(cw, r)
+			if cw.status >= 200 && cw.status < 300 {
+				_ = rc.SetJSON(r.Context(), ck, cached{Status: cw.status, Body: cw.buf.String()}, 10*time.Minute)
+			}
+		})
+	}
+}
+
+type captureWriter struct {
+	http.ResponseWriter
+	status int
+	buf    bytes.Buffer
+	wrote  bool
+}
+
+func (c *captureWriter) WriteHeader(code int) {
+	c.status = code
+	c.wrote = true
+	c.ResponseWriter.WriteHeader(code)
+}
+func (c *captureWriter) Write(b []byte) (int, error) {
+	if !c.wrote {
+		c.wrote = true
+	}
+	c.buf.Write(b)
+	return c.ResponseWriter.Write(b)
+}
 
 // corsMW responde preflight e ecoa a origem quando ela esta na lista (ou "*").
 func corsMW(origins []string) func(http.Handler) http.Handler {

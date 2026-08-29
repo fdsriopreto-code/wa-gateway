@@ -55,6 +55,37 @@ go run ./cmd/wa-gateway
 
 No PowerShell, defina as variáveis com `$env:DATABASE_URL="..."` etc., ou use o compose.
 
+## Integração (n8n, agentes de IA, SaaS)
+
+- **OpenAPI 3** em **`GET /openapi.json`** e **Swagger UI** em **`GET /docs`** —
+  fonte de verdade da API. Autenticação: header `X-Api-Key`.
+- **Idempotência:** mande o header `Idempotency-Key: <uuid>` em qualquer `POST`.
+  Retentativas (timeout do n8n, retry do fluxo) devolvem a mesma resposta sem
+  reenviar a mensagem. Cache de 10 min por chave+API-key.
+- **Teste de webhook:** `POST /api/sessions/{session}/webhook/test` dispara um
+  evento sintético (`webhook.test`) para cada URL configurada e devolve o
+  status HTTP de cada uma — valide o receptor antes de ligar de verdade.
+- **Readiness:** `GET /ready` (200 só com o Postgres respondendo) para o
+  health check do orquestrador.
+
+### n8n — receber mensagens
+
+1. No n8n, crie um workflow com o node **Webhook** (method `POST`), copie a URL.
+2. No wa-gateway, salve na config da sessão:
+   `{"webhooks":[{"url":"<url-do-n8n>","events":["message"],"hmac":{"secret":"…"}}]}`
+   (ou use o editor visual no console → **Configurar**).
+3. Clique **Testar webhooks** — deve chegar um `webhook.test` no n8n.
+4. Cada mensagem recebida chega como o payload achatado (`id`, `chatId`,
+   `from`, `body`, `type`, `media`…). Assine `message` (só recebidas) ou
+   `message.any` (tudo).
+
+### n8n — enviar / chamar a API
+
+Use o node **HTTP Request**: `POST {BASE}/api/sendText`, header
+`X-Api-Key: {KEY}`, body JSON `{"session":"default","chatId":"…","text":"{{ $json.resposta }}"}`.
+Todos os endpoints estão no `/docs`. Para fluxos com retry, adicione o header
+`Idempotency-Key: {{ $json.messageId }}` (ou um uuid do fluxo).
+
 ## Fluxo mínimo
 
 ```bash

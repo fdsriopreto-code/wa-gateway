@@ -80,6 +80,7 @@ const fmtClock=(s)=>{const d=new Date(typeof s==="number"?s*1000:s);return isNaN
 const fmtRel=(s)=>{if(!s)return"";const d=new Date(typeof s==="number"?s*1000:s),df=(Date.now()-d)/1000;
   if(Math.abs(df)<60)return"agora";if(df<3600)return Math.floor(df/60)+"min";if(df<86400)return Math.floor(df/3600)+"h";return Math.floor(df/86400)+"d";};
 const trunc=(s,n=18)=>!s?"":(s.length>n?s.slice(0,n)+"…":s);
+const nfmt=(n)=>typeof n==="number"?n.toLocaleString("pt-BR"):n;
 
 /* ═══════════════════════════════════════════════ api */
 async function api(method, path, body){
@@ -422,7 +423,7 @@ views.overview={title:"Visão geral",async render(root){
   ];
   body.append(
     h("div",{class:"kgrid"},cards.map(([i,k,v,dim])=>
-      h("div",{class:"kpi"},h("div",{class:"k"},ic(i,"sm"),k),h("div",{class:"v"+(dim?" dim":"")},v)))),
+      h("div",{class:"kpi"},h("div",{class:"k"},ic(i,"sm"),k),h("div",{class:"v"+(dim?" dim":"")},nfmt(v))))),
     h("div",{class:"sec-title"},ic("sessions","sm"),"Sessões"),
     (sessions&&sessions.length)?table([
       {h:"nome",get:s=>h("b",{},s.name)},
@@ -571,7 +572,10 @@ function cfgModal(s){
     // pane webhooks
     h("div",{class:"cfg-pane","data-pane":"0"},
       whList,
-      h("button",{class:"btn ghost sm",style:"margin-top:12px",onclick:()=>addEditor({url:"",events:["message","session.status"]})},ic("plus","sm"),"Adicionar webhook"),
+      h("div",{class:"btn-row",style:"margin-top:12px"},
+        h("button",{class:"btn ghost sm",onclick:()=>addEditor({url:"",events:["message","session.status"]})},ic("plus","sm"),"Adicionar webhook"),
+        h("button",{class:"btn subtle sm",onclick:testWebhooks},ic("send","sm"),"Testar webhooks (salvos)")),
+      h("div",{id:"wh-test-out"}),
       webhooks.length?null:h("p",{class:"hint",style:"margin-top:8px"},"Nenhum webhook. Adicione um e marque os eventos que quer receber.")),
     // pane outbox
     h("div",{class:"cfg-pane","data-pane":"1",hidden:true},
@@ -615,6 +619,19 @@ function cfgModal(s){
     return out;
   }
   function syncPreview(){const p=$("#cfg-preview");if(p)p.textContent=JSON.stringify(collect(),null,2);}
+  async function testWebhooks(e){
+    const o=$("#wh-test-out"); clear(o); o.append(spinner());
+    try{
+      const r=await apiData("POST",`/api/sessions/${encodeURIComponent(s.name)}/webhook/test`,{});
+      clear(o);
+      o.append(table([
+        {h:"url",get:x=>h("span",{class:"mono muted wrap"},trunc(x.url,42))},
+        {h:"resultado",get:x=>x.ok?badge("ok"):badge("failed")},
+        {h:"http",get:x=>x.status||x.error||""},
+        {h:"ms",get:x=>x.ms},
+      ],r,"sem webhooks"));
+    }catch(err){clear(o);o.append(h("p",{class:"hint"},err.message));fail(err);}
+  }
   async function save(e){
     const config=collect();
     e.target.disabled=true;
@@ -1024,6 +1041,9 @@ function renderNav(active){
       ic(icon,"sm"),label)));
     nav.append(g);
   });
+  const docs=h("div",{class:"nav-group"},h("div",{class:"lbl"},"Referência"));
+  docs.append(h("a",{href:LS.base+"/docs",target:"_blank",rel:"noopener"},ic("link","sm"),"API docs (Swagger)"));
+  nav.append(docs);
 }
 function renderFoot(){
   const f=$("#foot");clear(f);
@@ -1075,7 +1095,9 @@ $("#refresh").addEventListener("click",route);
 $("#menu-btn").addEventListener("click",()=>$("#sidebar").classList.toggle("open"));
 addEventListener("hashchange",route);
 addEventListener("keydown",e=>{
-  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();openPalette();}
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();openPalette();return;}
+  const typing=/^(INPUT|TEXTAREA|SELECT)$/.test((e.target||{}).tagName||"");
+  if(e.key==="/"&&!typing){const s=$("#view input[placeholder^='filtrar']");if(s){e.preventDefault();s.focus();}}
 });
 $("#kbd-hint")?.addEventListener("click",openPalette);
 

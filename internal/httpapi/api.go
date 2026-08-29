@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"wa-gateway/internal/cache"
 	"wa-gateway/internal/engine"
 	"wa-gateway/internal/media"
 	"wa-gateway/internal/outbox"
@@ -23,6 +24,7 @@ type Deps struct {
 	Hub         *ws.Hub
 	Queue       *outbox.Queue // fila de saida com pacing; pode ser nil
 	Media       media.Store   // armazenamento de midia; pode ser nil/Disabled
+	Cache       *cache.Redis  // p/ idempotencia; pode ser nil
 	Log         *slog.Logger
 	Version     string
 	Commit      string
