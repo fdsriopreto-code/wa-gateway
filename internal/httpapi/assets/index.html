@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark light">
   <title>wa-gateway · console</title>
   <link rel="stylesheet" href="styles.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%2322c55e'/><text x='50' y='72' font-size='58' text-anchor='middle' fill='%23041108' font-family='sans-serif' font-weight='bold'>w</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%2326d367'/><text x='50' y='72' font-size='58' text-anchor='middle' fill='%2305160c' font-family='sans-serif' font-weight='bold'>w</text></svg>">
 </head>
 <body>
   <div id="app">
@@ -14,6 +14,7 @@
       <div class="brand">
         <div class="logo">w</div>
         <div class="txt">wa-gateway<small>console</small></div>
+        <button class="kbd-btn" id="kbd-hint" title="Busca rápida (Ctrl/⌘ K)"><kbd>⌘K</kbd></button>
       </div>
       <nav id="nav"></nav>
       <div class="side-foot" id="foot"></div>
@@ -21,7 +22,7 @@
     <main class="content">
       <header class="topbar">
         <div style="display:flex;align-items:center;gap:12px">
-          <button id="menu-btn" class="btn ghost sm" title="Menu">☰</button>
+          <button id="menu-btn" class="btn ghost sm">☰</button>
           <h1 id="crumb"></h1>
         </div>
         <div class="right">
