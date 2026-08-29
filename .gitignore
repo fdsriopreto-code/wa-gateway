@@ -1,8 +1,9 @@
-# build
+# build (ancorados na raiz — NÃO ignorar a pasta cmd/wa-gateway)
 /bin/
 /dist/
-wa-gateway
-wa-gateway.exe
+/wa-gateway
+/wa-gateway.exe
+/out/
 
 # env / secrets
 .env
