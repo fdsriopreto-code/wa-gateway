@@ -428,19 +428,27 @@ views.sessions = { title: "Sessões", async render(root) {
 }};
 
 function qrModal(name) {
+  const img = h("img", { alt: "QR code" });
   const box = h("div", { class: "qr wait" }, "gerando QR…");
-  const sub = h("div", { class: "msub", style: "text-align:center;margin:12px 0 0" }, "");
+  const sub = h("div", { class: "msub", style: "text-align:center;margin:12px 0 0" }, "aguardando…");
   modal("Conectar " + name, "WhatsApp → Aparelhos conectados → Conectar aparelho", h("div", {}, box, sub));
-  let stop = false;
+  const label = { SCAN_QR_CODE: "escaneie o código", STARTING: "conectando…", WORKING: "conectado ✓", FAILED: "falhou", STOPPED: "parada" };
+  let stop = false, lastCode = null;
   const tick = async () => {
     if (stop || !$("#modal-root .modal")) return;
     try {
       const s = await apiData("GET", "/api/sessions/" + name);
-      sub.textContent = "status: " + s.status;
+      sub.textContent = label[s.status] || s.status;
       if (s.status === "WORKING") { stop = true; ok(name + " conectada ✓"); clear($("#modal-root")); route(); return; }
       if (s.status === "SCAN_QR_CODE") {
-        box.className = "qr"; clear(box);
-        box.append(h("img", { alt: "QR", src: `${LS.base}/api/${encodeURIComponent(name)}/auth/qr.png?api_key=${encodeURIComponent(LS.key)}&_t=${Date.now()}` }));
+        // só troca a imagem quando o código realmente muda (evita flicker).
+        let code = null;
+        try { code = (await apiData("GET", `/api/${encodeURIComponent(name)}/auth/qr`)).code; } catch {}
+        if (code && code !== lastCode) {
+          lastCode = code;
+          if (box.classList.contains("wait")) { box.className = "qr"; clear(box); box.append(img); }
+          img.src = `${LS.base}/api/${encodeURIComponent(name)}/auth/qr.png?api_key=${encodeURIComponent(LS.key)}&c=${encodeURIComponent(code.slice(0, 10))}`;
+        }
       }
     } catch {}
     setTimeout(tick, 3000);
