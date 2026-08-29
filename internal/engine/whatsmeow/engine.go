@@ -152,19 +152,30 @@ func (e *Engine) pickDevice(ctx context.Context, container *sqlstore.Container) 
 	if err != nil {
 		return nil, fmt.Errorf("listar devices: %w", err)
 	}
+	var exact, byNumber *waStore.Device
 	have := make([]string, 0, len(all))
 	for _, d := range all {
 		if d.ID == nil {
 			continue
 		}
 		have = append(have, d.ID.String())
-		if d.ID.User == want.User {
-			return d, nil
+		if d.ID.String() == e.deps.StoredJID {
+			exact = d
+		} else if d.ID.User == want.User && byNumber == nil {
+			byNumber = d
 		}
 	}
-	e.deps.Logger.Warn("device do numero nao encontrado no store — vai pedir QR",
-		"quero", want.User, "devicesNoStore", have)
-	return container.NewDevice(), nil
+	switch {
+	case exact != nil:
+		return exact, nil
+	case byNumber != nil:
+		e.deps.Logger.Info("device casado pelo numero (JID exato divergiu)", "quero", e.deps.StoredJID, "achei", byNumber.ID.String())
+		return byNumber, nil
+	default:
+		e.deps.Logger.Warn("device do numero nao encontrado no store — vai pedir QR",
+			"quero", want.User, "devicesNoStore", have)
+		return container.NewDevice(), nil
+	}
 }
 
 func (e *Engine) pumpQR(ch <-chan whatsmeow.QRChannelItem) {
