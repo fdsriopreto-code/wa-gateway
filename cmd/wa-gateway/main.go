@@ -87,9 +87,12 @@ func run() error {
 	dispatcher := webhook.NewDispatcher(st, asynqClient, log, cfg.WebhookTimeout, cfg.WebhookMaxAttempts)
 
 	// ---- armazenamento de midia (opcional) ----
+	// Falha de conexao com o S3/MinIO NAO derruba o app: degrada para "sem
+	// midia" e loga o motivo (evita crash-loop por env var errada).
 	var mediaStore media.Store = media.Disabled{}
 	if cfg.MediaBackend == "s3" {
-		mediaStore, err = media.NewS3(ctx, media.S3Config{
+		s3ctx, s3cancel := context.WithTimeout(ctx, 15*time.Second)
+		ms, s3err := media.NewS3(s3ctx, media.S3Config{
 			Endpoint:      cfg.S3Endpoint,
 			Region:        cfg.S3Region,
 			Bucket:        cfg.S3Bucket,
@@ -99,10 +102,14 @@ func run() error {
 			PathStyle:     cfg.S3PathStyle,
 			PublicBaseURL: cfg.S3PublicBaseURL,
 		})
-		if err != nil {
-			return err
+		s3cancel()
+		if s3err != nil {
+			log.Error("midia s3 indisponivel — seguindo SEM armazenamento de midia",
+				"endpoint", cfg.S3Endpoint, "bucket", cfg.S3Bucket, "err", s3err)
+		} else {
+			mediaStore = ms
+			log.Info("armazenamento de midia: s3", "bucket", cfg.S3Bucket, "endpoint", cfg.S3Endpoint)
 		}
-		log.Info("armazenamento de midia: s3", "bucket", cfg.S3Bucket, "endpoint", cfg.S3Endpoint)
 	}
 
 	// ---- sessoes ----

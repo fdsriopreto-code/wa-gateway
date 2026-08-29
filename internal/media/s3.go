@@ -35,6 +35,14 @@ func NewS3(ctx context.Context, cfg S3Config) (Store, error) {
 	if cfg.Endpoint == "" || cfg.Bucket == "" {
 		return nil, fmt.Errorf("media s3: endpoint e bucket sao obrigatorios")
 	}
+	// tolera S3_ENDPOINT com esquema/barra ("https://host/" -> "host" + UseSSL).
+	if strings.HasPrefix(cfg.Endpoint, "http://") {
+		cfg.Endpoint, cfg.UseSSL = strings.TrimPrefix(cfg.Endpoint, "http://"), false
+	} else if strings.HasPrefix(cfg.Endpoint, "https://") {
+		cfg.Endpoint, cfg.UseSSL = strings.TrimPrefix(cfg.Endpoint, "https://"), true
+	}
+	cfg.Endpoint = strings.TrimRight(cfg.Endpoint, "/")
+
 	cli, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:        credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure:       cfg.UseSSL,
