@@ -27,6 +27,16 @@ type SendResult struct {
 	Timestamp int64  `json:"timestamp"`
 }
 
+// MessageOpts sao extras comuns a qualquer envio: citar mensagem, mencionar
+// participantes e (para texto) tentar anexar preview de link.
+type MessageOpts struct {
+	QuotedID          string   `json:"quotedId,omitempty"`          // stanza id da msg citada
+	QuotedParticipant string   `json:"quotedParticipant,omitempty"` // jid do autor citado (grupo)
+	QuotedText        string   `json:"quotedText,omitempty"`        // texto da msg citada (preview)
+	Mentions          []string `json:"mentions,omitempty"`          // numeros/jids mencionados
+	LinkPreview       bool     `json:"linkPreview,omitempty"`       // texto: busca OG do 1o link
+}
+
 // Media e um anexo a enviar. Filename so vale para documento; Seconds e
 // Waveform sao dicas opcionais para audio/PTT.
 type Media struct {
@@ -37,6 +47,17 @@ type Media struct {
 	Seconds  uint32
 	GIF      bool // trata o video como GIF playback
 	Voice    bool // audio como nota de voz (PTT)
+	Opts     MessageOpts
+}
+
+// Me e o perfil da propria sessao.
+type Me struct {
+	JID          string   `json:"jid"`
+	LID          string   `json:"lid,omitempty"`
+	PushName     string   `json:"pushName,omitempty"`
+	Platform     string   `json:"platform,omitempty"`
+	BusinessName string   `json:"businessName,omitempty"`
+	Devices      []string `json:"devices,omitempty"`
 }
 
 // Location e um ponto geografico para SendLocation.
@@ -133,13 +154,15 @@ type Engine interface {
 	JID() string // JID completo, se logado
 
 	// --- envio ---
-	SendText(ctx context.Context, chatID, text string) (SendResult, error)
+	SendText(ctx context.Context, chatID, text string, opts MessageOpts) (SendResult, error)
 	SendImage(ctx context.Context, chatID string, data []byte, mimetype, caption string) (SendResult, error)
 	SendFile(ctx context.Context, chatID string, m Media) (SendResult, error)
 	SendVideo(ctx context.Context, chatID string, m Media) (SendResult, error)
 	SendAudio(ctx context.Context, chatID string, m Media) (SendResult, error)
+	SendSticker(ctx context.Context, chatID string, data []byte, opts MessageOpts) (SendResult, error)
 	SendLocation(ctx context.Context, chatID string, loc Location) (SendResult, error)
 	SendContact(ctx context.Context, chatID string, cs []Contact) (SendResult, error)
+	SendPoll(ctx context.Context, chatID, name string, options []string, selectable int, opts MessageOpts) (SendResult, error)
 
 	// --- operacoes sobre mensagens ---
 	SendReaction(ctx context.Context, ref MessageRef, emoji string) (SendResult, error)
@@ -153,6 +176,14 @@ type Engine interface {
 	GetUserInfo(ctx context.Context, jids []string) ([]UserInfo, error)
 	GetProfilePicture(ctx context.Context, jid string, preview bool) (string, error)
 
+	// --- perfil / conta ---
+	PairPhone(ctx context.Context, phone string) (string, error)
+	Me(ctx context.Context) (Me, error)
+	SetStatusMessage(ctx context.Context, text string) error
+	SetPresence(ctx context.Context, available bool) error
+	SetBlocked(ctx context.Context, jid string, block bool) ([]string, error)
+	Blocklist(ctx context.Context) ([]string, error)
+
 	// --- grupos ---
 	ListGroups(ctx context.Context) ([]Group, error)
 	GroupInfo(ctx context.Context, jid string) (Group, error)
@@ -161,6 +192,9 @@ type Engine interface {
 	UpdateParticipants(ctx context.Context, jid string, action ParticipantAction, participants []string) ([]GroupParticipant, error)
 	SetGroupName(ctx context.Context, jid, name string) error
 	SetGroupTopic(ctx context.Context, jid, topic string) error
+	SetGroupPhoto(ctx context.Context, jid string, data []byte) (string, error)
+	SetGroupAnnounce(ctx context.Context, jid string, on bool) error
+	SetGroupLocked(ctx context.Context, jid string, on bool) error
 	GroupInviteLink(ctx context.Context, jid string, reset bool) (string, error)
 	JoinGroupWithLink(ctx context.Context, code string) (string, error)
 }

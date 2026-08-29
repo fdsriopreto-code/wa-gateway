@@ -181,6 +181,80 @@ func (d Deps) groupInviteLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"link": link})
 }
 
+type groupPhotoReq struct {
+	Session string `json:"session"`
+	Data    string `json:"data"` // base64 (jpeg)
+}
+
+// PUT /api/groups/{jid}/photo
+func (d Deps) setGroupPhoto(w http.ResponseWriter, r *http.Request) {
+	var req groupPhotoReq
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if req.Data == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "data e obrigatorio")
+		return
+	}
+	data, _, err := decodeB64(req.Data)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "data nao e base64 valido")
+		return
+	}
+	eng, ok := d.engineFor(w, req.Session)
+	if !ok {
+		return
+	}
+	id, err := eng.SetGroupPhoto(r.Context(), chi.URLParam(r, "jid"), data)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "group_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"pictureId": id})
+}
+
+type groupToggleReq struct {
+	Session string `json:"session"`
+	Enabled bool   `json:"enabled"`
+}
+
+// PUT /api/groups/{jid}/announce   {enabled}  (true = só admins enviam)
+func (d Deps) setGroupAnnounce(w http.ResponseWriter, r *http.Request) {
+	var req groupToggleReq
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	eng, ok := d.engineFor(w, req.Session)
+	if !ok {
+		return
+	}
+	if err := eng.SetGroupAnnounce(r.Context(), chi.URLParam(r, "jid"), req.Enabled); err != nil {
+		writeErr(w, http.StatusBadGateway, "group_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// PUT /api/groups/{jid}/locked   {enabled}  (true = só admins editam infos)
+func (d Deps) setGroupLocked(w http.ResponseWriter, r *http.Request) {
+	var req groupToggleReq
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	eng, ok := d.engineFor(w, req.Session)
+	if !ok {
+		return
+	}
+	if err := eng.SetGroupLocked(r.Context(), chi.URLParam(r, "jid"), req.Enabled); err != nil {
+		writeErr(w, http.StatusBadGateway, "group_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 type joinGroupReq struct {
 	Session string `json:"session"`
 	Code    string `json:"code"`

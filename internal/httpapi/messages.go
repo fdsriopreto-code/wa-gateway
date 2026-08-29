@@ -15,8 +15,25 @@ type queueOpts struct {
 	Delay   string `json:"delay,omitempty"` // ex.: "30s", "5m"
 }
 
+// msgExtra e embutido nos envios que aceitam citacao / mencoes / link preview.
+type msgExtra struct {
+	QuotedID          string   `json:"quotedId,omitempty"`
+	QuotedParticipant string   `json:"quotedParticipant,omitempty"`
+	QuotedText        string   `json:"quotedText,omitempty"`
+	Mentions          []string `json:"mentions,omitempty"`
+	LinkPreview       bool     `json:"linkPreview,omitempty"`
+}
+
+func (m msgExtra) opts() engine.MessageOpts {
+	return engine.MessageOpts{
+		QuotedID: m.QuotedID, QuotedParticipant: m.QuotedParticipant, QuotedText: m.QuotedText,
+		Mentions: m.Mentions, LinkPreview: m.LinkPreview,
+	}
+}
+
 type sendTextReq struct {
 	queueOpts
+	msgExtra
 	Session string `json:"session"`
 	ChatID  string `json:"chatId"`
 	Text    string `json:"text"`
@@ -33,14 +50,15 @@ func (d Deps) sendText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Enqueue {
-		d.enqueue(w, r, req.Session, outbox.KindText, outbox.Args{ChatID: req.ChatID, Text: req.Text}, req.Delay)
+		d.enqueue(w, r, req.Session, outbox.KindText,
+			outbox.Args{ChatID: req.ChatID, Text: req.Text, Opts: req.opts()}, req.Delay)
 		return
 	}
 	eng, ok := d.engineFor(w, req.Session)
 	if !ok {
 		return
 	}
-	res, err := eng.SendText(r.Context(), req.ChatID, req.Text)
+	res, err := eng.SendText(r.Context(), req.ChatID, req.Text, req.opts())
 	sendResp(w, res, err)
 }
 
@@ -48,6 +66,7 @@ func (d Deps) sendText(w http.ResponseWriter, r *http.Request) {
 // pelos tipos que nao os usam.
 type mediaReq struct {
 	queueOpts
+	msgExtra
 	Session  string `json:"session"`
 	ChatID   string `json:"chatId"`
 	Caption  string `json:"caption"`
@@ -81,8 +100,78 @@ func (d Deps) mediaFor(w http.ResponseWriter, r *http.Request) (mediaReq, engine
 	}
 	return req, engine.Media{
 		Data: data, Mimetype: mime, Filename: req.Filename, Caption: req.Caption,
-		Seconds: req.Seconds, GIF: req.GIF, Voice: req.Voice,
+		Seconds: req.Seconds, GIF: req.GIF, Voice: req.Voice, Opts: req.opts(),
 	}, true
+}
+
+type stickerReq struct {
+	queueOpts
+	msgExtra
+	Session string `json:"session"`
+	ChatID  string `json:"chatId"`
+	Data    string `json:"data"`
+}
+
+func (d Deps) sendSticker(w http.ResponseWriter, r *http.Request) {
+	var req stickerReq
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if req.ChatID == "" || req.Data == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "chatId e data sao obrigatorios")
+		return
+	}
+	data, _, err := decodeB64(req.Data)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "data nao e base64 valido")
+		return
+	}
+	if req.Enqueue {
+		d.enqueue(w, r, req.Session, outbox.KindSticker,
+			outbox.Args{ChatID: req.ChatID, Media: &engine.Media{Data: data}, Opts: req.opts()}, req.Delay)
+		return
+	}
+	eng, ok := d.engineFor(w, req.Session)
+	if !ok {
+		return
+	}
+	res, err := eng.SendSticker(r.Context(), req.ChatID, data, req.opts())
+	sendResp(w, res, err)
+}
+
+type pollReq struct {
+	queueOpts
+	msgExtra
+	Session    string   `json:"session"`
+	ChatID     string   `json:"chatId"`
+	Name       string   `json:"name"`
+	Options    []string `json:"options"`
+	Selectable int      `json:"selectable"` // quantas opcoes podem ser marcadas (default 1)
+}
+
+func (d Deps) sendPoll(w http.ResponseWriter, r *http.Request) {
+	var req pollReq
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if req.ChatID == "" || req.Name == "" || len(req.Options) < 2 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "chatId, name e ao menos 2 options sao obrigatorios")
+		return
+	}
+	if req.Enqueue {
+		d.enqueue(w, r, req.Session, outbox.KindPoll, outbox.Args{
+			ChatID: req.ChatID, PollName: req.Name, PollOpts: req.Options, PollPick: req.Selectable, Opts: req.opts(),
+		}, req.Delay)
+		return
+	}
+	eng, ok := d.engineFor(w, req.Session)
+	if !ok {
+		return
+	}
+	res, err := eng.SendPoll(r.Context(), req.ChatID, req.Name, req.Options, req.Selectable, req.opts())
+	sendResp(w, res, err)
 }
 
 // sendMedia e o corpo comum de sendImage/sendFile/sendVideo/sendAudio.

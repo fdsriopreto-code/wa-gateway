@@ -73,6 +73,7 @@ func (e *Engine) SendFile(ctx context.Context, chatID string, m engine.Media) (e
 		FileEncSHA256: up.FileEncSHA256,
 		FileSHA256:    up.FileSHA256,
 		FileLength:    proto.Uint64(up.FileLength),
+		ContextInfo:   ctxInfo(m.Opts),
 	}}
 	return e.send(ctx, chatID, msg)
 }
@@ -95,6 +96,7 @@ func (e *Engine) SendVideo(ctx context.Context, chatID string, m engine.Media) (
 		FileEncSHA256: up.FileEncSHA256,
 		FileSHA256:    up.FileSHA256,
 		FileLength:    proto.Uint64(up.FileLength),
+		ContextInfo:   ctxInfo(m.Opts),
 	}
 	if m.Seconds > 0 {
 		vm.Seconds = proto.Uint32(m.Seconds)
@@ -123,6 +125,7 @@ func (e *Engine) SendAudio(ctx context.Context, chatID string, m engine.Media) (
 		FileSHA256:    up.FileSHA256,
 		FileLength:    proto.Uint64(up.FileLength),
 		PTT:           proto.Bool(m.Voice),
+		ContextInfo:   ctxInfo(m.Opts),
 	}
 	if m.Seconds > 0 {
 		am.Seconds = proto.Uint32(m.Seconds)

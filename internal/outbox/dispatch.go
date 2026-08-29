@@ -16,8 +16,10 @@ const (
 	KindFile     Kind = "file"
 	KindVideo    Kind = "video"
 	KindAudio    Kind = "audio"
+	KindSticker  Kind = "sticker"
 	KindLocation Kind = "location"
 	KindContact  Kind = "contact"
+	KindPoll     Kind = "poll"
 	KindReaction Kind = "reaction"
 	KindDelete   Kind = "delete"
 	KindEdit     Kind = "edit"
@@ -33,13 +35,17 @@ type Args struct {
 	Contacts []engine.Contact   `json:"contacts,omitempty"`
 	Ref      *engine.MessageRef `json:"ref,omitempty"`
 	Emoji    string             `json:"emoji,omitempty"`
+	Opts     engine.MessageOpts `json:"opts,omitempty"`
+	PollName string             `json:"pollName,omitempty"`
+	PollOpts []string           `json:"pollOpts,omitempty"`
+	PollPick int                `json:"pollPick,omitempty"`
 }
 
 // Dispatch executa o job contra a engine ja resolvida.
 func Dispatch(ctx context.Context, eng engine.Engine, kind Kind, a Args) (engine.SendResult, error) {
 	switch kind {
 	case KindText:
-		return eng.SendText(ctx, a.ChatID, a.Text)
+		return eng.SendText(ctx, a.ChatID, a.Text, a.Opts)
 	case KindImage:
 		m := media(a)
 		return eng.SendImage(ctx, a.ChatID, m.Data, m.Mimetype, m.Caption)
@@ -49,6 +55,10 @@ func Dispatch(ctx context.Context, eng engine.Engine, kind Kind, a Args) (engine
 		return eng.SendVideo(ctx, a.ChatID, media(a))
 	case KindAudio:
 		return eng.SendAudio(ctx, a.ChatID, media(a))
+	case KindSticker:
+		return eng.SendSticker(ctx, a.ChatID, media(a).Data, a.Opts)
+	case KindPoll:
+		return eng.SendPoll(ctx, a.ChatID, a.PollName, a.PollOpts, a.PollPick, a.Opts)
 	case KindLocation:
 		if a.Location == nil {
 			return engine.SendResult{}, fmt.Errorf("location ausente")

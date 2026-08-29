@@ -98,15 +98,22 @@ ou `...@g.us`. Mídia via `data` (base64 puro ou data URI).
 
 | Método | Rota | Corpo principal |
 |---|---|---|
-| POST | `/api/sendText` | `chatId, text` |
-| POST | `/api/sendImage` \| `/api/sendFile` \| `/api/sendVideo` \| `/api/sendAudio` | `chatId, data, mimetype?, caption?, filename?, seconds?, gif?, voice?` |
+| POST | `/api/sendText` | `chatId, text, quotedId?, quotedParticipant?, mentions[]?, linkPreview?` |
+| POST | `/api/sendImage` \| `/api/sendFile` \| `/api/sendVideo` \| `/api/sendAudio` | `chatId, data, mimetype?, caption?, filename?, seconds?, gif?, voice?, quotedId?, mentions[]?` |
+| POST | `/api/sendSticker` | `chatId, data` (base64 `.webp`) |
 | POST | `/api/sendLocation` | `chatId, latitude, longitude, name?, address?` |
 | POST | `/api/sendContact` | `chatId, contacts:[{name, phone?\|vcard?}]` |
+| POST | `/api/sendPoll` | `chatId, name, options[] (≥2), selectable?` |
 | POST | `/api/reaction` | `chatId, messageId, fromMe?, senderId?, emoji` (`""` remove) |
 | POST | `/api/deleteMessage` | `chatId, messageId, fromMe?, senderId?` |
 | POST | `/api/editMessage` | `chatId, messageId, text` |
 | POST | `/api/sendSeen` | `chatId, messageId, fromMe?, senderId?` |
 | POST | `/api/presence` | `chatId, state` (`typing`\|`recording`\|`paused`) |
+| POST | `/api/sessions/{session}/auth/pair-code` | `phone` → devolve código de 8 dígitos (parear **sem QR**) |
+| GET | `/api/{session}/me` | — (JID, LID, pushName, plataforma, devices) |
+| PUT | `/api/{session}/profile/status` | `status` (meu recado) |
+| POST | `/api/{session}/presence` | `available` (online/offline global) |
+| GET | `/api/{session}/blocklist` · POST `/api/{session}/block` | `{jid, block}` |
 | GET | `/api/contacts/check?session=&phone=` | — (aceita `phone` repetido ou lista com vírgula) |
 | GET | `/api/contacts/info?session=&jid=` | — |
 | GET | `/api/contacts/profile-picture?session=&jid=&preview=` | — |
@@ -117,6 +124,8 @@ ou `...@g.us`. Mídia via `data` (base64 puro ou data URI).
 | POST | `/api/groups/{jid}/leave` | — |
 | POST | `/api/groups/{jid}/participants` | `action, participants[]` |
 | PUT | `/api/groups/{jid}/name` \| `/topic` | `name` \| `topic` |
+| PUT | `/api/groups/{jid}/photo` | `data` (base64 jpeg) |
+| PUT | `/api/groups/{jid}/announce` \| `/locked` | `enabled` (só admins enviam / editam) |
 | GET | `/api/groups/{jid}/invite-link?session=&reset=` | — |
 | GET | `/api/outbox?session=&limit=` | lista os jobs da fila de saída |
 | GET | `/api/media/{id}?redirect=` | stream do binário (ou 302 pra URL assinada) |

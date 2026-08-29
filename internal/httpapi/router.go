@@ -43,6 +43,14 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 
 		r.Get("/api/{session}/auth/qr", d.sessionQR)
 		r.Get("/api/{session}/auth/qr.png", d.sessionQRImage)
+		r.Post("/api/sessions/{session}/auth/pair-code", d.pairCode)
+
+		// --- perfil / conta ---
+		r.Get("/api/{session}/me", d.me)
+		r.Put("/api/{session}/profile/status", d.setProfileStatus)
+		r.Post("/api/{session}/presence", d.globalPresence)
+		r.Get("/api/{session}/blocklist", d.getBlocklist)
+		r.Post("/api/{session}/block", d.setBlocked)
 
 		// --- dashboard / auditoria ---
 		r.Get("/api/stats", d.stats)
@@ -59,8 +67,10 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		r.Post("/api/sendFile", d.sendFile)
 		r.Post("/api/sendVideo", d.sendVideo)
 		r.Post("/api/sendAudio", d.sendAudio)
+		r.Post("/api/sendSticker", d.sendSticker)
 		r.Post("/api/sendLocation", d.sendLocation)
 		r.Post("/api/sendContact", d.sendContact)
+		r.Post("/api/sendPoll", d.sendPoll)
 
 		// --- operacoes sobre mensagens ---
 		r.Post("/api/reaction", d.reaction)
@@ -93,6 +103,9 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 				r.Post("/participants", d.groupParticipants)
 				r.Put("/name", d.setGroupName)
 				r.Put("/topic", d.setGroupTopic)
+				r.Put("/photo", d.setGroupPhoto)
+				r.Put("/announce", d.setGroupAnnounce)
+				r.Put("/locked", d.setGroupLocked)
 				r.Get("/invite-link", d.groupInviteLink)
 			})
 		})

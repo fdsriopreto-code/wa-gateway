@@ -231,10 +231,28 @@ const ENDPOINTS=[
     g:"Sessões",m:"POST",path:"/api/sessions/{session}/"+a,title:a[0].toUpperCase()+a.slice(1),
     fields:[["session","session",{req:1}]]})),
   {g:"Sessões",m:"GET",path:"/api/{session}/auth/qr",title:"QR (texto)",fields:[["session","session",{req:1}]]},
+  {g:"Sessões",m:"POST",path:"/api/sessions/{session}/auth/pair-code",title:"Parear por código (sem QR)",fields:[
+    ["session","session",{req:1}],["phone","text",{req:1,ph:"5517999999999 (só dígitos, internacional)"}]]},
+  {g:"Sessões",m:"GET",path:"/api/{session}/me",title:"Meu perfil (JID, pushName…)",fields:[["session","session",{req:1}]]},
+  {g:"Sessões",m:"PUT",path:"/api/{session}/profile/status",title:"Mudar meu recado",fields:[["session","session",{req:1}],["status","text",{req:1}]]},
+  {g:"Sessões",m:"POST",path:"/api/{session}/presence",title:"Presença global (online/offline)",fields:[["session","session",{req:1}],["available","bool",{def:true}]]},
+  {g:"Sessões",m:"GET",path:"/api/{session}/blocklist",title:"Lista de bloqueados",fields:[["session","session",{req:1}]]},
+  {g:"Sessões",m:"POST",path:"/api/{session}/block",title:"Bloquear / desbloquear",fields:[
+    ["session","session",{req:1}],["jid","text",{req:1,ph:"5517…@s.whatsapp.net"}],["block","bool",{def:true,hint:"desmarcado = desbloqueia"}]]},
 
   {g:"Mensagens",m:"POST",path:"/api/sendText",title:"Enviar texto",fields:[
     ["session","session",{req:1}],["chatId","text",{req:1,ph:"5517999999999@s.whatsapp.net"}],
-    ["text","area",{req:1}],["enqueue","bool",{hint:"fila com pacing anti-ban"}],["delay","text",{ph:"30s"}]]},
+    ["text","area",{req:1}],
+    ["quotedId","text",{ph:"citar: id da mensagem"}],["quotedParticipant","text",{ph:"citar em grupo: jid do autor"}],
+    ["mentions","lines",{ph:"mencionar: um número por linha"}],["linkPreview","bool",{hint:"anexa preview do 1º link"}],
+    ["enqueue","bool",{hint:"fila com pacing anti-ban"}],["delay","text",{ph:"30s"}]]},
+  {g:"Mensagens",m:"POST",path:"/api/sendSticker",title:"Enviar sticker (webp)",fields:[
+    ["session","session",{req:1}],["chatId","text",{req:1}],["data","area",{req:1,ph:"base64 do .webp"}],
+    ["enqueue","bool",{}],["delay","text",{ph:"30s"}]]},
+  {g:"Mensagens",m:"POST",path:"/api/sendPoll",title:"Enviar enquete",fields:[
+    ["session","session",{req:1}],["chatId","text",{req:1}],["name","text",{req:1,ph:"pergunta"}],
+    ["options","lines",{req:1,ph:"uma opção por linha (mín. 2)"}],["selectable","num",{ph:"1"}],
+    ["enqueue","bool",{}],["delay","text",{ph:"30s"}]]},
   ...[["sendImage","imagem"],["sendFile","documento"],["sendVideo","vídeo"],["sendAudio","áudio"]].map(([p,l])=>({
     g:"Mensagens",m:"POST",path:"/api/"+p,title:"Enviar "+l,fields:[
       ["session","session",{req:1}],["chatId","text",{req:1,ph:"…@s.whatsapp.net"}],
@@ -272,6 +290,9 @@ const ENDPOINTS=[
     ["action","select",{opts:["add","remove","promote","demote"],req:1}],["participants","lines",{req:1}]]},
   {g:"Grupos",m:"PUT",path:"/api/groups/{jid}/name",title:"Renomear grupo",fields:[["session","session",{req:1}],["jid","text",{req:1}],["name","text",{req:1}]]},
   {g:"Grupos",m:"PUT",path:"/api/groups/{jid}/topic",title:"Tópico do grupo",fields:[["session","session",{req:1}],["jid","text",{req:1}],["topic","text",{}]]},
+  {g:"Grupos",m:"PUT",path:"/api/groups/{jid}/photo",title:"Foto do grupo",fields:[["session","session",{req:1}],["jid","text",{req:1}],["data","area",{req:1,ph:"base64 jpeg"}]]},
+  {g:"Grupos",m:"PUT",path:"/api/groups/{jid}/announce",title:"Só admins enviam",fields:[["session","session",{req:1}],["jid","text",{req:1}],["enabled","bool",{def:true}]]},
+  {g:"Grupos",m:"PUT",path:"/api/groups/{jid}/locked",title:"Só admins editam infos",fields:[["session","session",{req:1}],["jid","text",{req:1}],["enabled","bool",{def:true}]]},
   {g:"Grupos",m:"GET",path:"/api/groups/{jid}/invite-link",title:"Link de convite",fields:[["session","session",{req:1}],["jid","text",{req:1}],["reset","bool",{}]]},
 
   {g:"Contatos",m:"GET",path:"/api/contacts/check",title:"Número está no WhatsApp?",fields:[
@@ -449,7 +470,16 @@ views.sessions={title:"Sessões",async render(root){
     if(s.status==="SCAN_QR_CODE"){
       const img=h("img",{alt:"QR",src:qrURL(s.name)+Date.now()});
       slot.append(h("div",{class:"qrbox"},img),
-        h("div",{class:"muted",style:"text-align:center;font-size:11px;margin-top:6px"},"WhatsApp → Aparelhos conectados → Conectar"));
+        h("div",{class:"muted",style:"text-align:center;font-size:11px;margin-top:6px"},"WhatsApp → Aparelhos conectados → Conectar"),
+        h("div",{style:"text-align:center;margin-top:6px"},
+          h("button",{class:"btn subtle sm",onclick:async()=>{
+            const phone=prompt("Parear por código — número (só dígitos, internacional):",""); if(!phone)return;
+            try{const r=await apiData("POST",`/api/sessions/${encodeURIComponent(s.name)}/auth/pair-code`,{phone:phone.replace(/\D/g,"")});
+              modal("Código de pareamento — "+s.name,"No celular: Aparelhos conectados → Conectar → Conectar com número",
+                h("div",{style:"text-align:center"},h("div",{style:"font:800 30px/1.2 var(--mono);letter-spacing:.18em;padding:12px"},r.code),
+                  h("div",{class:"out-bar"},copyBtn("copiar código",r.code))));
+            }catch(e){fail(e);}
+          }},ic("cmd","sm"),"Parear por código")));
       slot.dataset.code="";
     }
   };

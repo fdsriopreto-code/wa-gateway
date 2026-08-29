@@ -333,41 +333,29 @@ func (e *Engine) currentClient() (*whatsmeow.Client, error) {
 	return e.client, nil
 }
 
-func (e *Engine) SendText(ctx context.Context, chatID, text string) (engine.SendResult, error) {
-	client, err := e.currentClient()
-	if err != nil {
-		return engine.SendResult{}, err
+func (e *Engine) SendText(ctx context.Context, chatID, text string, opts engine.MessageOpts) (engine.SendResult, error) {
+	ci := ctxInfo(opts)
+	// texto puro sem extras -> Conversation; com citacao/mencao/preview -> ExtendedText.
+	if ci == nil && !opts.LinkPreview {
+		return e.send(ctx, chatID, &waProto.Message{Conversation: proto.String(text)})
 	}
-	jid, err := types.ParseJID(chatID)
-	if err != nil {
-		return engine.SendResult{}, fmt.Errorf("chatId invalido: %w", err)
+	etm := &waProto.ExtendedTextMessage{Text: proto.String(text), ContextInfo: ci}
+	if opts.LinkPreview {
+		e.applyLinkPreview(ctx, etm, text)
 	}
-	msg := &waProto.Message{Conversation: proto.String(text)}
-	resp, err := client.SendMessage(ctx, jid, msg)
-	if err != nil {
-		return engine.SendResult{}, err
-	}
-	return engine.SendResult{MessageID: resp.ID, Timestamp: resp.Timestamp.Unix()}, nil
+	return e.send(ctx, chatID, &waProto.Message{ExtendedTextMessage: etm})
 }
 
 func (e *Engine) SendImage(ctx context.Context, chatID string, data []byte, mimetype, caption string) (engine.SendResult, error) {
-	client, err := e.currentClient()
+	up, err := e.uploadMedia(ctx, data, whatsmeow.MediaImage)
 	if err != nil {
 		return engine.SendResult{}, err
-	}
-	jid, err := types.ParseJID(chatID)
-	if err != nil {
-		return engine.SendResult{}, fmt.Errorf("chatId invalido: %w", err)
-	}
-	up, err := client.Upload(ctx, data, whatsmeow.MediaImage)
-	if err != nil {
-		return engine.SendResult{}, fmt.Errorf("upload: %w", err)
 	}
 	if mimetype == "" {
 		mimetype = "image/jpeg"
 	}
-	msg := &waProto.Message{ImageMessage: &waProto.ImageMessage{
-		Caption:       proto.String(caption),
+	return e.send(ctx, chatID, &waProto.Message{ImageMessage: &waProto.ImageMessage{
+		Caption:       strPtrOrNil(caption),
 		Mimetype:      proto.String(mimetype),
 		URL:           proto.String(up.URL),
 		DirectPath:    proto.String(up.DirectPath),
@@ -375,10 +363,5 @@ func (e *Engine) SendImage(ctx context.Context, chatID string, data []byte, mime
 		FileEncSHA256: up.FileEncSHA256,
 		FileSHA256:    up.FileSHA256,
 		FileLength:    proto.Uint64(up.FileLength),
-	}}
-	resp, err := client.SendMessage(ctx, jid, msg)
-	if err != nil {
-		return engine.SendResult{}, err
-	}
-	return engine.SendResult{MessageID: resp.ID, Timestamp: resp.Timestamp.Unix()}, nil
+	}})
 }

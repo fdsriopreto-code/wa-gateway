@@ -231,6 +231,44 @@ func (e *Engine) SetGroupTopic(ctx context.Context, jid, topic string) error {
 	return client.SetGroupTopic(ctx, j, "", "", topic)
 }
 
+func (e *Engine) SetGroupPhoto(ctx context.Context, jid string, data []byte) (string, error) {
+	client, err := e.currentClient()
+	if err != nil {
+		return "", err
+	}
+	j, err := types.ParseJID(jid)
+	if err != nil {
+		return "", fmt.Errorf("jid invalido: %w", err)
+	}
+	return client.SetGroupPhoto(ctx, j, data)
+}
+
+// SetGroupAnnounce: true = so admins enviam mensagens.
+func (e *Engine) SetGroupAnnounce(ctx context.Context, jid string, on bool) error {
+	client, err := e.currentClient()
+	if err != nil {
+		return err
+	}
+	j, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("jid invalido: %w", err)
+	}
+	return client.SetGroupAnnounce(ctx, j, on)
+}
+
+// SetGroupLocked: true = so admins editam nome/foto/descricao.
+func (e *Engine) SetGroupLocked(ctx context.Context, jid string, on bool) error {
+	client, err := e.currentClient()
+	if err != nil {
+		return err
+	}
+	j, err := types.ParseJID(jid)
+	if err != nil {
+		return fmt.Errorf("jid invalido: %w", err)
+	}
+	return client.SetGroupLocked(ctx, j, on)
+}
+
 func (e *Engine) GroupInviteLink(ctx context.Context, jid string, reset bool) (string, error) {
 	client, err := e.currentClient()
 	if err != nil {
