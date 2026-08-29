@@ -32,8 +32,10 @@ teardown de Evolution API e WAHA — ver `../repos-analise/blueprint-wa-api-go.h
 | ✅ | Fase 2 — reply/menções/link preview, sticker, enquete, parear-por-código, perfil (`/me`, recado, presença, block), grupo (foto/announce/locked) |
 | ✅ | Fase 2 — persistência de mensagens/chats (`MESSAGE_STORE=on`): `/api/chats`, histórico, `/api/messages/{id}/download`, `forwardMessage` |
 | ⬜ | Fase 2 (resto): labels do Business |
+| ✅ | Integração: OpenAPI (`/openapi.json`) + Swagger (`/docs`), idempotência, `/ready`, teste de webhook |
+| ✅ | **Servidor MCP** (`POST /mcp`) — 12 ferramentas para agentes de IA |
 | ⬜ | Fase 3: multi-sessão por processo + roteamento entre nós + fan-out WS via Redis |
-| ⬜ | Fase 4: servidor MCP, plugin NATS/AMQP, conector de bot |
+| ⬜ | Fase 4 (resto): plugin NATS/AMQP, conector de bot, Chatwoot |
 
 ## Rodar
 
@@ -85,6 +87,23 @@ Use o node **HTTP Request**: `POST {BASE}/api/sendText`, header
 `X-Api-Key: {KEY}`, body JSON `{"session":"default","chatId":"…","text":"{{ $json.resposta }}"}`.
 Todos os endpoints estão no `/docs`. Para fluxos com retry, adicione o header
 `Idempotency-Key: {{ $json.messageId }}` (ou um uuid do fluxo).
+
+### Agente de IA — servidor MCP
+
+`POST {BASE}/mcp` fala **Model Context Protocol** (JSON-RPC 2.0, transporte
+Streamable HTTP), autenticado por `X-Api-Key` ou `Authorization: Bearer <key>`.
+Métodos: `initialize`, `tools/list`, `tools/call`. Ferramentas expostas:
+
+`list_sessions` · `get_session` · `send_text` · `send_location` · `send_poll` ·
+`send_reaction` · `check_number` · `get_contact_info` · `get_profile_picture` ·
+`list_groups` · `list_chats` · `chat_history`.
+
+```bash
+curl -s $BASE/mcp -H "X-Api-Key: $KEY" -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"send_text","arguments":{"session":"default",
+                 "chatId":"5511999999999@s.whatsapp.net","text":"oi do agente"}}}'
+```
 
 ## Fluxo mínimo
 

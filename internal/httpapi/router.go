@@ -130,6 +130,10 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		})
 
 		r.Get("/ws", d.Hub.Handler)
+
+		// --- MCP (agentes de IA) ---
+		r.Post("/mcp", d.mcpHandler)
+		r.Get("/mcp", d.mcpHandler)
 	})
 
 	// console web embarcado (estatico, sem auth — a chave vai do navegador)

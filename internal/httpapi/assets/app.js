@@ -975,6 +975,12 @@ views.settings={title:"Conexão",async render(root){
         finally{e.target.disabled=false;}
       }},"Testar")),
     out));
+  page.append(h("div",{class:"sec-title"},ic("link","sm"),"Endpoints de integração"),
+    h("div",{class:"card pad"},
+      kv("OpenAPI",h("a",{class:"mono",style:"color:var(--accent)",href:LS.base+"/openapi.json",target:"_blank",rel:"noopener"},"/openapi.json")),
+      kv("Swagger UI",h("a",{class:"mono",style:"color:var(--accent)",href:LS.base+"/docs",target:"_blank",rel:"noopener"},"/docs")),
+      kv("MCP (agentes IA)",h("span",{class:"mono muted"},"POST "+LS.base+"/mcp")),
+      kv("WebSocket",h("span",{class:"mono muted"},"/ws?session=…&events=*&api_key=…"))));
 }};
 
 /* ═══════════════════════════════════════════════ command palette (⌘K) */

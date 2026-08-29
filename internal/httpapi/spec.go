@@ -87,6 +87,9 @@ var specEndpoints = []ep{
 	{"GET", "/api/media/{id}", "Monitor", "Baixar/stream de mídia guardada", nil, []string{"redirect?"}},
 	{"GET", "/api/stats", "Monitor", "Estatísticas", nil, nil},
 
+	// ---- mcp
+	{"POST", "/mcp", "MCP", "Endpoint MCP (JSON-RPC 2.0) para agentes de IA. Métodos: initialize, tools/list, tools/call.", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, nil},
+
 	// ---- keys
 	{"GET", "/api/keys", "Keys", "Listar API keys", nil, nil},
 	{"POST", "/api/keys", "Keys", "Criar API key", map[string]any{"label": "app-x", "scopes": []string{"*"}}, nil},
@@ -163,6 +166,7 @@ func (d Deps) openapiDoc(scheme, host string) map[string]any {
 			map[string]any{"name": "Messaging"}, map[string]any{"name": "Contacts"},
 			map[string]any{"name": "Groups"}, map[string]any{"name": "History"},
 			map[string]any{"name": "Monitor"}, map[string]any{"name": "Keys"},
+			map[string]any{"name": "MCP", "description": "Model Context Protocol — ferramentas p/ agentes de IA."},
 		},
 		"paths": paths,
 	}
