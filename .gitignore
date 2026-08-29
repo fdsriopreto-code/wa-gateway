@@ -1,0 +1,19 @@
+# build
+/bin/
+/dist/
+wa-gateway
+wa-gateway.exe
+
+# env / secrets
+.env
+*.local
+
+# data
+/.media/
+/data/
+
+# editor
+.idea/
+.vscode/
+*.swp
+.DS_Store

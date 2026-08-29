@@ -1,0 +1,246 @@
+// Package session orquestra o ciclo de vida das sessoes: 1 engine viva por
+// sessao, posse garantida por lock no Redis (base para escala horizontal).
+package session
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"wa-gateway/internal/cache"
+	"wa-gateway/internal/engine"
+	"wa-gateway/internal/events"
+	"wa-gateway/internal/observability"
+	"wa-gateway/internal/store"
+)
+
+const (
+	lockTTL     = 30 * time.Second
+	lockRefresh = 10 * time.Second
+)
+
+var (
+	ErrNotFound  = store.ErrNotFound
+	ErrLocked    = errors.New("sessao pertence a outro no")
+	ErrNotActive = errors.New("sessao nao esta ativa neste no")
+)
+
+type handle struct {
+	eng    engine.Engine
+	stopCh chan struct{}
+}
+
+type Manager struct {
+	store         *store.Store
+	cache         *cache.Redis
+	bus           *events.Bus
+	log           *slog.Logger
+	dsn           string
+	nodeID        string
+	defaultEngine string
+
+	mu      sync.RWMutex
+	running map[string]*handle
+}
+
+func NewManager(st *store.Store, rc *cache.Redis, bus *events.Bus, log *slog.Logger, dsn, nodeID, defaultEngine string) *Manager {
+	return &Manager{
+		store: st, cache: rc, bus: bus, log: log,
+		dsn: dsn, nodeID: nodeID, defaultEngine: defaultEngine,
+		running: make(map[string]*handle),
+	}
+}
+
+func lockKey(name string) string { return "wa:lock:" + name }
+
+// Upsert cria ou atualiza o registro da sessao (sem inicia-la).
+func (m *Manager) Upsert(ctx context.Context, name string, cfg json.RawMessage) (store.SessionRecord, error) {
+	eng := m.defaultEngine
+	return m.store.UpsertSession(ctx, name, eng, cfg)
+}
+
+func (m *Manager) Get(ctx context.Context, name string) (store.SessionRecord, error) {
+	return m.store.GetSession(ctx, name)
+}
+
+func (m *Manager) List(ctx context.Context) ([]store.SessionRecord, error) {
+	return m.store.ListSessions(ctx)
+}
+
+func (m *Manager) Delete(ctx context.Context, name string) error {
+	_ = m.Stop(ctx, name, false)
+	return m.store.DeleteSession(ctx, name)
+}
+
+// Engine devolve a engine viva desta sessao neste no.
+func (m *Manager) Engine(name string) (engine.Engine, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	h, ok := m.running[name]
+	if !ok {
+		return nil, false
+	}
+	return h.eng, true
+}
+
+// Start adquire o lock de posse e inicia a engine. ctx e usado apenas para
+// as chamadas de setup; o ciclo de vida da engine e independente.
+func (m *Manager) Start(ctx context.Context, name string) error {
+	m.mu.Lock()
+	if _, ok := m.running[name]; ok {
+		m.mu.Unlock()
+		return nil
+	}
+	m.mu.Unlock()
+
+	rec, err := m.store.GetSession(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	ok, err := m.cache.AcquireLock(ctx, lockKey(name), m.nodeID, lockTTL)
+	if err != nil {
+		return fmt.Errorf("lock: %w", err)
+	}
+	if !ok {
+		return ErrLocked
+	}
+
+	engName := rec.Engine
+	if engName == "" {
+		engName = m.defaultEngine
+	}
+	factory, ok := engine.Get(engName)
+	if !ok {
+		_ = m.cache.ReleaseLock(ctx, lockKey(name), m.nodeID)
+		return fmt.Errorf("engine desconhecida: %s", engName)
+	}
+
+	eng, err := factory(engine.Deps{
+		Session: name,
+		DSN:     m.dsn,
+		Logger:  m.log.With("session", name),
+		Emit:    m.emit(name, engName),
+	})
+	if err != nil {
+		_ = m.cache.ReleaseLock(ctx, lockKey(name), m.nodeID)
+		return err
+	}
+
+	h := &handle{eng: eng, stopCh: make(chan struct{})}
+	m.mu.Lock()
+	m.running[name] = h
+	m.mu.Unlock()
+
+	go m.refreshLock(name, h.stopCh)
+
+	if err := eng.Start(context.Background()); err != nil {
+		_ = m.Stop(ctx, name, false)
+		return err
+	}
+	_ = m.store.SetSessionStatus(ctx, name, string(eng.Status()), eng.JID())
+	m.log.Info("sessao iniciada", "session", name, "engine", engName)
+	return nil
+}
+
+func (m *Manager) Stop(ctx context.Context, name string, logout bool) error {
+	m.mu.Lock()
+	h, ok := m.running[name]
+	if ok {
+		delete(m.running, name)
+	}
+	m.mu.Unlock()
+	if !ok {
+		return ErrNotActive
+	}
+
+	close(h.stopCh)
+	if logout {
+		_ = h.eng.Logout(context.Background())
+	} else {
+		_ = h.eng.Stop()
+	}
+	_ = m.cache.ReleaseLock(ctx, lockKey(name), m.nodeID)
+
+	status := string(engine.StatusStopped)
+	if logout {
+		status = string(engine.StatusLoggedOut)
+	}
+	_ = m.store.SetSessionStatus(context.Background(), name, status, "")
+	m.log.Info("sessao parada", "session", name, "logout", logout)
+	return nil
+}
+
+// StopAll e chamado no shutdown: solta locks e desconecta tudo.
+func (m *Manager) StopAll() {
+	m.mu.RLock()
+	names := make([]string, 0, len(m.running))
+	for n := range m.running {
+		names = append(names, n)
+	}
+	m.mu.RUnlock()
+	for _, n := range names {
+		_ = m.Stop(context.Background(), n, false)
+	}
+}
+
+// RestoreOwned reinicia, na subida, as sessoes que este no consegue travar
+// e que estavam em execucao.
+func (m *Manager) RestoreOwned(ctx context.Context) {
+	recs, err := m.store.ListSessions(ctx)
+	if err != nil {
+		m.log.Error("restore: list sessions", "err", err)
+		return
+	}
+	for _, r := range recs {
+		if r.Status != string(engine.StatusWorking) && r.Status != string(engine.StatusStarting) {
+			continue
+		}
+		if err := m.Start(ctx, r.Name); err != nil && !errors.Is(err, ErrLocked) {
+			m.log.Warn("restore: falha ao iniciar", "session", r.Name, "err", err)
+		}
+	}
+}
+
+func (m *Manager) refreshLock(name string, stop <-chan struct{}) {
+	t := time.NewTicker(lockRefresh)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			ok, err := m.cache.RenewLock(context.Background(), lockKey(name), m.nodeID, lockTTL)
+			if err != nil || !ok {
+				m.log.Error("perdi o lock da sessao, parando", "session", name, "err", err)
+				go m.Stop(context.Background(), name, false)
+				return
+			}
+		}
+	}
+}
+
+// emit devolve o callback que a engine usa para publicar eventos, ja
+// enriquecendo status/JID no store quando relevante.
+func (m *Manager) emit(name, engName string) func(events.Event) {
+	return func(e events.Event) {
+		if e.Session == "" {
+			e.Session = name
+		}
+		if e.Engine == "" {
+			e.Engine = engName
+		}
+		observability.EventsPublished.WithLabelValues(e.Name).Inc()
+		m.bus.Publish(e)
+
+		if e.Name == events.SessionStatus {
+			if eng, ok := m.Engine(name); ok {
+				_ = m.store.SetSessionStatus(context.Background(), name, string(eng.Status()), eng.JID())
+			}
+		}
+	}
+}
