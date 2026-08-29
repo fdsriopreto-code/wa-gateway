@@ -28,6 +28,7 @@ func (d Deps) stats(w http.ResponseWriter, r *http.Request) {
 		"sessions": map[string]any{"total": total, "byStatus": byStatus},
 		"database": d.Store.Pool.Ping(ctx) == nil,
 		"version":  d.Version,
+		"commit":   d.Commit,
 		"started":  d.StartedAt,
 	})
 }

@@ -18,14 +18,17 @@ import (
 )
 
 type Deps struct {
-	Manager   *session.Manager
-	Store     *store.Store
-	Hub       *ws.Hub
-	Queue     *outbox.Queue // fila de saida com pacing; pode ser nil
-	Media     media.Store   // armazenamento de midia; pode ser nil/Disabled
-	Log       *slog.Logger
-	Version   string
-	StartedAt string
+	Manager     *session.Manager
+	Store       *store.Store
+	Hub         *ws.Hub
+	Queue       *outbox.Queue // fila de saida com pacing; pode ser nil
+	Media       media.Store   // armazenamento de midia; pode ser nil/Disabled
+	Log         *slog.Logger
+	Version     string
+	Commit      string
+	StartedAt   string
+	CORSOrigins []string
+	AccessLog   bool
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

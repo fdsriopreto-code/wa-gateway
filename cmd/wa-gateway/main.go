@@ -32,7 +32,10 @@ import (
 	"wa-gateway/internal/ws"
 )
 
-var version = "0.1.0-dev"
+var (
+	version = "0.2.0"
+	commit  = "dev" // injetado no build: -ldflags "-X main.commit=<sha>"
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -167,14 +170,17 @@ func run() error {
 	}
 
 	handler := httpapi.NewRouter(httpapi.Deps{
-		Manager:   mgr,
-		Store:     st,
-		Hub:       hub,
-		Queue:     outQueue,
-		Media:     mediaStore,
-		Log:       log,
-		Version:   version,
-		StartedAt: time.Now().UTC().Format(time.RFC3339),
+		Manager:     mgr,
+		Store:       st,
+		Hub:         hub,
+		Queue:       outQueue,
+		Media:       mediaStore,
+		Log:         log,
+		Version:     version,
+		Commit:      commit,
+		StartedAt:   time.Now().UTC().Format(time.RFC3339),
+		CORSOrigins: cfg.CORSOrigins,
+		AccessLog:   cfg.AccessLog,
 	}, authn)
 
 	srv := &http.Server{

@@ -15,6 +15,12 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	if len(d.CORSOrigins) > 0 {
+		r.Use(corsMW(d.CORSOrigins))
+	}
+	if d.AccessLog && d.Log != nil {
+		r.Use(accessLogMW(d.Log))
+	}
 	r.Use(metricsMW)
 
 	// publico

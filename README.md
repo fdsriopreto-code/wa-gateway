@@ -1,5 +1,7 @@
 # wa-gateway
 
+![ci](https://github.com/fdsriopreto-code/wa-gateway/actions/workflows/ci.yml/badge.svg)
+
 API HTTP multi-sessão de WhatsApp em Go. Reescrita enxuta inspirada no
 teardown de Evolution API e WAHA — ver `../repos-analise/blueprint-wa-api-go.html`.
 

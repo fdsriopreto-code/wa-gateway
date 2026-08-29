@@ -91,7 +91,7 @@ func (b *Bus) Publish(e Event) {
 			if b.OnDrop != nil {
 				b.OnDrop(s.name)
 			}
-			if n%100 == 1 {
+			if n%100 == 1 && b.log != nil {
 				b.log.Warn("assinante lento, evento descartado",
 					"subscriber", s.name, "dropped_total", n)
 			}

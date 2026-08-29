@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -44,6 +45,13 @@ type Config struct {
 	S3PathStyle     bool
 	S3PublicBaseURL string
 
+	// CORS: origens permitidas (CSV). Vazio = sem headers CORS (só same-origin).
+	// "*" libera qualquer origem (a API ainda exige X-Api-Key).
+	CORSOrigins []string
+
+	// AccessLog: loga uma linha por request (method, path, status, dur).
+	AccessLog bool
+
 	LogLevel  string
 	LogFormat string
 	NodeID    string
@@ -72,6 +80,8 @@ func Load() (Config, error) {
 		S3UseSSL:           envBool("S3_USE_SSL", false),
 		S3PathStyle:        envBool("S3_PATH_STYLE", true),
 		S3PublicBaseURL:    env("S3_PUBLIC_BASE_URL", ""),
+		CORSOrigins:        splitCSV(env("CORS_ORIGINS", "")),
+		AccessLog:          envBool("ACCESS_LOG", false),
 		LogLevel:           env("LOG_LEVEL", "info"),
 		LogFormat:          env("LOG_FORMAT", "text"),
 		NodeID:             env("NODE_ID", ""),
@@ -101,6 +111,20 @@ func envInt(k string, def int) int {
 		}
 	}
 	return def
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := parts[:0]
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func envBool(k string, def bool) bool {

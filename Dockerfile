@@ -4,7 +4,10 @@ WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/wa-gateway ./cmd/wa-gateway
+ARG GIT_SHA=dev
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags "-s -w -X main.commit=${GIT_SHA}" \
+    -o /out/wa-gateway ./cmd/wa-gateway
 
 # ---- runtime ----
 FROM gcr.io/distroless/static-debian12:nonroot

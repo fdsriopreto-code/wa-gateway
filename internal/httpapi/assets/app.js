@@ -432,7 +432,9 @@ views.overview={title:"Visão geral",async render(root){
     ],sessions):empty("sessions","nenhuma sessão ainda",h("a",{class:"btn sm",href:"#/sessions"},"Criar sessão")),
     h("div",{class:"sec-title"},ic("settings","sm"),"Ambiente"),
     h("div",{class:"card pad"},
-      kv("versão",stats.version||"?"),kv("iniciado",fmtTime(stats.started)),
+      kv("versão",stats.version||"?"),
+      kv("commit",h("span",{class:"mono muted"},stats.commit||"dev")),
+      kv("iniciado",fmtTime(stats.started)),
       kv("database",stats.database?badge("ok"):badge("failed")),
       kv("base",h("span",{class:"mono muted"},LS.base))),
   );

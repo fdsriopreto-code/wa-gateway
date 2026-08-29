@@ -14,6 +14,7 @@ func (d Deps) health(w http.ResponseWriter, r *http.Request) {
 		"status":   status,
 		"database": dbOK,
 		"version":  d.Version,
+		"commit":   d.Commit,
 		"started":  d.StartedAt,
 	})
 }
@@ -22,5 +23,6 @@ func (d Deps) version(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"name":    "wa-gateway",
 		"version": d.Version,
+		"commit":  d.Commit,
 	})
 }

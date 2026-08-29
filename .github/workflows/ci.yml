@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache: true
+      - name: gofmt
+        run: |
+          out=$(gofmt -l ./cmd ./internal ./migrations)
+          if [ -n "$out" ]; then echo "não formatado:"; echo "$out"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: build (estático, igual ao Dockerfile)
+        run: CGO_ENABLED=0 go build -trimpath ./...
+      - name: test
+        run: go test ./...
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: node --check no console
+        run: node --check internal/httpapi/assets/app.js
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [go, web]
+    steps:
+      - uses: actions/checkout@v4
+      - name: build da imagem
+        run: docker build -t wa-gateway:ci .
