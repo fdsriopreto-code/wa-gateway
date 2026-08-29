@@ -29,6 +29,10 @@ type Config struct {
 	OutboxJitter      time.Duration
 	OutboxDailyLimit  int
 
+	// Persistencia de mensagens/chats recebidos no Postgres (historico,
+	// download de midia antiga). "on" (padrao) | "off".
+	MessageStore bool
+
 	// Armazenamento de midia (opcional). MediaBackend: "none" (padrao) | "s3".
 	MediaBackend    string
 	S3Endpoint      string
@@ -58,6 +62,7 @@ func Load() (Config, error) {
 		OutboxMinInterval:  envDuration("OUTBOX_MIN_INTERVAL", 3*time.Second),
 		OutboxJitter:       envDuration("OUTBOX_JITTER", 2*time.Second),
 		OutboxDailyLimit:   envInt("OUTBOX_DAILY_LIMIT", 0),
+		MessageStore:       env("MESSAGE_STORE", "on") != "off",
 		MediaBackend:       env("MEDIA_BACKEND", "none"),
 		S3Endpoint:         env("S3_ENDPOINT", ""),
 		S3Region:           env("S3_REGION", "us-east-1"),

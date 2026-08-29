@@ -22,6 +22,7 @@ import (
 	_ "wa-gateway/internal/engine/whatsmeow" // registra a engine
 	"wa-gateway/internal/events"
 	"wa-gateway/internal/httpapi"
+	"wa-gateway/internal/inbox"
 	"wa-gateway/internal/media"
 	"wa-gateway/internal/observability"
 	"wa-gateway/internal/outbox"
@@ -143,6 +144,10 @@ func run() error {
 	// ---- consumidores do barramento ----
 	go dispatcher.Run(ctx, bus)
 	go hub.Run(ctx, bus)
+	if cfg.MessageStore {
+		go inbox.New(st, log).Run(ctx, bus)
+		log.Info("persistencia de mensagens: on")
+	}
 	go mgr.RestoreOwned(ctx)
 
 	// ---- HTTP ----

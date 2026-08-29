@@ -302,6 +302,10 @@ const ENDPOINTS=[
   {g:"Contatos",m:"GET",path:"/api/contacts/profile-picture",title:"Foto de perfil",fields:[
     ["session","session",{req:1}],["jid","text",{req:1}],["preview","bool",{}]]},
 
+  {g:"Fila & monitor",m:"GET",path:"/api/chats",title:"Listar conversas (histórico)",fields:[["session","session",{req:1}],["limit","num",{ph:"100"}]]},
+  {g:"Fila & monitor",m:"GET",path:"/api/chats/{chatId}/messages",title:"Histórico de uma conversa",fields:[
+    ["session","session",{req:1}],["chatId","text",{req:1,ph:"…@s.whatsapp.net"}],["limit","num",{ph:"50"}],["before","text",{ph:"RFC3339 (paginação)"}]]},
+  {g:"Fila & monitor",m:"GET",path:"/api/messages/{id}/download",title:"Baixar mídia de mensagem guardada",fields:[["session","session",{req:1}],["id","text",{req:1,ph:"messageId"}]]},
   {g:"Fila & monitor",m:"GET",path:"/api/outbox",title:"Jobs da fila de saída",fields:[["session","session",{req:1}],["limit","num",{ph:"50"}]]},
   {g:"Fila & monitor",m:"GET",path:"/api/deliveries",title:"Entregas de webhook",fields:[["session","session",{req:1}],["limit","num",{ph:"100"}]]},
   {g:"Fila & monitor",m:"GET",path:"/api/stats",title:"Estatísticas",fields:[]},
@@ -735,6 +739,21 @@ views.chat={title:"Chat",async render(root){
       if(bubbles.querySelector(".chat-empty"))clear(bubbles);
       bubbles.append(b); bubbles.scrollTop=bubbles.scrollHeight; return b;
     };
+
+    // histórico do store (se persistência estiver ligada)
+    (async()=>{
+      try{
+        const hist=await apiData("GET",`/api/chats/${encodeURIComponent(cid)}/messages?session=${encodeURIComponent(session)}&limit=40`);
+        if(Array.isArray(hist)&&hist.length){
+          clear(bubbles);
+          hist.slice().reverse().forEach(m=>{
+            const body=m.body||`[${m.type}]`;
+            addBubble(m.fromMe?"out":"in",body,fmtClock(m.timestamp)+(m.pushName&&!m.fromMe?" · "+m.pushName:""));
+          });
+          bubbles.append(h("div",{class:"bubble sys"},"— fim do histórico · ao vivo abaixo —"));
+        }
+      }catch{}
+    })();
 
     async function sendMsg(){
       const text=composer.value.trim(); if(!text)return;

@@ -50,6 +50,19 @@ type Media struct {
 	Opts     MessageOpts
 }
 
+// StoredMedia carrega os campos necessarios para baixar uma midia depois,
+// a partir do que ficou guardado (sem precisar do evento original).
+type StoredMedia struct {
+	Type          string // image|video|audio|document|sticker
+	DirectPath    string
+	Mimetype      string
+	Filename      string
+	MediaKey      []byte
+	FileEncSHA256 []byte
+	FileSHA256    []byte
+	FileLength    uint64
+}
+
 // Me e o perfil da propria sessao.
 type Me struct {
 	JID          string   `json:"jid"`
@@ -175,6 +188,7 @@ type Engine interface {
 	CheckOnWhatsApp(ctx context.Context, phones []string) ([]OnWhatsApp, error)
 	GetUserInfo(ctx context.Context, jids []string) ([]UserInfo, error)
 	GetProfilePicture(ctx context.Context, jid string, preview bool) (string, error)
+	DownloadMedia(ctx context.Context, m StoredMedia) (data []byte, mimetype string, err error)
 
 	// --- perfil / conta ---
 	PairPhone(ctx context.Context, phone string) (string, error)

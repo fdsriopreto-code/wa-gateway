@@ -46,6 +46,9 @@ func normalizeMessage(evt *waEvents.Message, includeRaw bool) map[string]any {
 		out["hasMedia"] = true
 		out["mediaType"] = info.MediaType
 	}
+	if mm := mediaMetaOf(msg); mm != nil {
+		out["mediaMeta"] = mm // p/ baixar depois (bytes viram base64 no webhook)
+	}
 	if ci := contextInfo(msg); ci != nil {
 		if ci.GetStanzaID() != "" {
 			out["quotedId"] = ci.GetStanzaID()
@@ -85,6 +88,55 @@ func normalizeReceipt(evt *waEvents.Receipt, includeRaw bool) map[string]any {
 	}
 	if includeRaw {
 		out["raw"] = evt
+	}
+	return out
+}
+
+// dl e o subconjunto de campos que qualquer *Message de midia expoe.
+type dl interface {
+	GetDirectPath() string
+	GetMediaKey() []byte
+	GetFileSHA256() []byte
+	GetFileEncSHA256() []byte
+	GetFileLength() uint64
+	GetMimetype() string
+}
+
+func mediaPart(m *waProto.Message) dl {
+	switch {
+	case m == nil:
+		return nil
+	case m.GetImageMessage() != nil:
+		return m.GetImageMessage()
+	case m.GetVideoMessage() != nil:
+		return m.GetVideoMessage()
+	case m.GetAudioMessage() != nil:
+		return m.GetAudioMessage()
+	case m.GetDocumentMessage() != nil:
+		return m.GetDocumentMessage()
+	case m.GetStickerMessage() != nil:
+		return m.GetStickerMessage()
+	default:
+		return nil
+	}
+}
+
+// mediaMetaOf devolve os campos p/ baixar a midia depois (nil se nao ha midia).
+func mediaMetaOf(m *waProto.Message) map[string]any {
+	p := mediaPart(m)
+	if p == nil {
+		return nil
+	}
+	out := map[string]any{
+		"directPath":    p.GetDirectPath(),
+		"mimetype":      p.GetMimetype(),
+		"mediaKey":      p.GetMediaKey(),
+		"fileSha256":    p.GetFileSHA256(),
+		"fileEncSha256": p.GetFileEncSHA256(),
+		"fileLength":    p.GetFileLength(),
+	}
+	if d := m.GetDocumentMessage(); d != nil && d.GetFileName() != "" {
+		out["filename"] = d.GetFileName()
 	}
 	return out
 }

@@ -85,6 +85,11 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		// --- midia ---
 		r.Get("/api/media/{id}", d.getMedia)
 
+		// --- historico (store de mensagens) ---
+		r.Get("/api/chats", d.listChats)
+		r.Get("/api/chats/{chatId}/messages", d.chatMessages)
+		r.Get("/api/messages/{id}/download", d.messageDownload)
+
 		// --- contatos ---
 		r.Route("/api/contacts", func(r chi.Router) {
 			r.Get("/check", d.contactsCheck)

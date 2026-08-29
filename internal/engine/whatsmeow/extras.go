@@ -176,3 +176,37 @@ type reqErr struct{ s string }
 
 func (e reqErr) Error() string { return e.s }
 func errBadReq(s string) error { return reqErr{s} }
+
+// DownloadMedia baixa+descriptografa uma midia a partir dos campos guardados.
+func (e *Engine) DownloadMedia(ctx context.Context, m engine.StoredMedia) ([]byte, string, error) {
+	client, err := e.currentClient()
+	if err != nil {
+		return nil, "", err
+	}
+	if m.DirectPath == "" || len(m.MediaKey) == 0 {
+		return nil, "", errBadReq("midia sem directPath/mediaKey guardados")
+	}
+	mt, mms := mediaTypeFor(m.Type)
+	data, err := client.DownloadMediaWithPath(ctx, m.DirectPath, m.FileEncSHA256, m.FileSHA256, m.MediaKey, mt, mms, len(m.FileSHA256) == 0)
+	if err != nil {
+		return nil, "", err
+	}
+	mime := m.Mimetype
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	return data, mime, nil
+}
+
+func mediaTypeFor(t string) (whatsmeow.MediaType, string) {
+	switch t {
+	case "video":
+		return whatsmeow.MediaVideo, "video"
+	case "audio", "ptt":
+		return whatsmeow.MediaAudio, "audio"
+	case "document":
+		return whatsmeow.MediaDocument, "document"
+	default: // image, sticker
+		return whatsmeow.MediaImage, "image"
+	}
+}
