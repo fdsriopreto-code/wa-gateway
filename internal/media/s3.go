@@ -55,11 +55,20 @@ func NewS3(ctx context.Context, cfg S3Config) (Store, error) {
 
 	exists, err := cli.BucketExists(ctx, cfg.Bucket)
 	if err != nil {
-		return nil, fmt.Errorf("media s3: BucketExists: %w", err)
+		er := minio.ToErrorResponse(err)
+		hint := ""
+		if er.Code == "" || er.Code == "BadRequest" {
+			hint = " — a resposta nao parece de uma API S3; confira se S3_ENDPOINT aponta para a porta da API (9000), nao para o painel (9001)"
+		} else if er.Code == "AccessDenied" || er.Code == "SignatureDoesNotMatch" {
+			hint = " — credenciais sem permissao; crie o bucket na mao no painel ou use uma chave com acesso total"
+		}
+		return nil, fmt.Errorf("media s3: BucketExists (endpoint=%s ssl=%v code=%q status=%d): %w%s",
+			cfg.Endpoint, cfg.UseSSL, er.Code, er.StatusCode, err, hint)
 	}
 	if !exists {
 		if err := cli.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{Region: cfg.Region}); err != nil {
-			return nil, fmt.Errorf("media s3: MakeBucket: %w", err)
+			return nil, fmt.Errorf("media s3: MakeBucket (endpoint=%s): %w — se for permissao, crie o bucket %q no painel do MinIO",
+				cfg.Endpoint, err, cfg.Bucket)
 		}
 	}
 

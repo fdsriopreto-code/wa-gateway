@@ -200,6 +200,13 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 }
 
 func (m *Manager) Stop(ctx context.Context, name string, logout bool) error {
+	return m.stop(ctx, name, logout, true)
+}
+
+// stop encerra a engine da sessao. persist=false (usado no shutdown) NAO
+// altera o status no banco: o estado desejado continua o que era (ex.:
+// WORKING) para que RestoreOwned reconecte no proximo boot.
+func (m *Manager) stop(ctx context.Context, name string, logout, persist bool) error {
 	m.mu.Lock()
 	h, ok := m.running[name]
 	if ok {
@@ -218,16 +225,19 @@ func (m *Manager) Stop(ctx context.Context, name string, logout bool) error {
 	}
 	_ = m.cache.ReleaseLock(ctx, lockKey(name), m.nodeID)
 
-	status := string(engine.StatusStopped)
-	if logout {
-		status = string(engine.StatusLoggedOut)
+	if persist {
+		status := string(engine.StatusStopped)
+		if logout {
+			status = string(engine.StatusLoggedOut)
+		}
+		_ = m.store.SetSessionStatus(context.Background(), name, status, "")
 	}
-	_ = m.store.SetSessionStatus(context.Background(), name, status, "")
-	m.log.Info("sessao parada", "session", name, "logout", logout)
+	m.log.Info("sessao parada", "session", name, "logout", logout, "persist", persist)
 	return nil
 }
 
-// StopAll e chamado no shutdown: solta locks e desconecta tudo.
+// StopAll e chamado no shutdown: solta locks e desconecta tudo, SEM marcar as
+// sessoes como paradas — assim RestoreOwned as reconecta no proximo boot.
 func (m *Manager) StopAll() {
 	m.mu.RLock()
 	names := make([]string, 0, len(m.running))
@@ -236,7 +246,7 @@ func (m *Manager) StopAll() {
 	}
 	m.mu.RUnlock()
 	for _, n := range names {
-		_ = m.Stop(context.Background(), n, false)
+		_ = m.stop(context.Background(), n, false, false)
 	}
 }
 
@@ -248,12 +258,19 @@ func (m *Manager) RestoreOwned(ctx context.Context) {
 		m.log.Error("restore: list sessions", "err", err)
 		return
 	}
+	restorable := map[string]bool{
+		string(engine.StatusWorking):  true,
+		string(engine.StatusStarting): true,
+		string(engine.StatusScanQR):   true, // estava pareando: retoma o fluxo
+	}
 	for _, r := range recs {
-		if r.Status != string(engine.StatusWorking) && r.Status != string(engine.StatusStarting) {
+		if !restorable[r.Status] {
 			continue
 		}
 		if err := m.Start(ctx, r.Name); err != nil && !errors.Is(err, ErrLocked) {
 			m.log.Warn("restore: falha ao iniciar", "session", r.Name, "err", err)
+		} else {
+			m.log.Info("restore: sessao reconectando", "session", r.Name, "era", r.Status)
 		}
 	}
 }
