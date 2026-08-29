@@ -168,6 +168,37 @@ evento do whatsmeow passa como `engine.<tipo>`** — cobertura total.
 
 Assinatura por wildcard: `message.*`, `session.*`, `*`.
 
+### Mensagens — payload normalizado
+
+- **`message`** → só mensagens **recebidas** (não `fromMe`). É o que um bot assina.
+- **`message.any`** → todas, inclusive as que você mandou.
+- **`message.ack`** → recibos (`delivered` / `read` / `played` / `retry`).
+
+O payload é achatado (o struct cru do whatsmeow fica em `raw`). Endereços
+`@lid` são resolvidos para o telefone (`@s.whatsapp.net`) quando possível:
+
+```json
+{
+  "id": "A5010C563B75F82E469274B2B0606F5C",
+  "chatId": "5517996778746@s.whatsapp.net",
+  "chatLid": "161761386868832@lid",
+  "from": "5517996778746@s.whatsapp.net",
+  "fromMe": false,
+  "isGroup": false,
+  "pushName": "PRO TELHADOS RIO PRETO",
+  "type": "text",
+  "timestamp": 1756499088,
+  "body": "Oi",
+  "quotedId": "",
+  "mentions": [],
+  "raw": { }
+}
+```
+
+`type`: `text` · `image` · `video` · `audio` · `document` · `sticker` ·
+`location` · `contact` · `reaction` · `poll` · `poll_vote` ·
+`buttons_response` · `list_response` · `unknown`.
+
 ## Layout
 
 ```

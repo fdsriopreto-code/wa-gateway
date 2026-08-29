@@ -46,12 +46,10 @@ func translate(raw any) (name string, payload any) {
 		return "session.keepalive_restored", raw
 
 	// ---- mensagens ----
-	case *waEvents.Message:
-		return "message.any", raw
+	// NOTE: *waEvents.Message e *waEvents.Receipt sao tratados antes de chegar
+	// aqui (handleEvent), com payload normalizado.
 	case *waEvents.UndecryptableMessage:
 		return "message.undecryptable", raw
-	case *waEvents.Receipt:
-		return "message.ack", raw
 	case *waEvents.MediaRetry:
 		return "message.media_retry", raw
 

@@ -15,6 +15,7 @@ import (
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
+	waEvents "go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 
@@ -152,6 +153,22 @@ func (e *Engine) handleEvent(raw any) {
 		}
 		e.mu.Unlock()
 	}
+
+	// mensagens e recibos saem com payload normalizado (achatado). O struct
+	// cru continua acessivel em payload["raw"].
+	switch ev := raw.(type) {
+	case *waEvents.Message:
+		p := normalizeMessage(ev)
+		e.emit("message.any", p)
+		if !ev.Info.IsFromMe {
+			e.emit("message", p) // recebidas: o que um bot assina
+		}
+		return
+	case *waEvents.Receipt:
+		e.emit("message.ack", normalizeReceipt(ev))
+		return
+	}
+
 	name, payload := translate(raw)
 	e.emit(name, payload)
 }

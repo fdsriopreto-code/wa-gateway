@@ -23,9 +23,9 @@ const (
 	QRCode        = "session.qr"     // payload: {code}
 	PairSuccess   = "session.pair"   // payload: cru da engine
 
-	Message         = "message"     // mensagem recebida (nao fromMe)
-	MessageAny      = "message.any" // qualquer mensagem, inclusive fromMe
-	MessageAck      = "message.ack" // recibo de entrega/leitura
+	Message         = "message"     // RECEBIDA (nao fromMe), payload normalizado
+	MessageAny      = "message.any" // qualquer, inclusive fromMe, payload normalizado
+	MessageAck      = "message.ack" // recibo entrega/leitura, payload normalizado
 	MessageReaction = "message.reaction"
 	MessageRevoked  = "message.revoked"
 	MessageEdited   = "message.edited"
