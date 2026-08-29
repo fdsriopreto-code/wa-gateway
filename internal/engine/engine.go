@@ -187,6 +187,10 @@ type Deps struct {
 	// RawEvents diz se o payload de mensagem/recibo deve incluir "raw" (o
 	// struct cru da engine). Default (nil): nao inclui.
 	RawEvents func() bool
+	// StoredJID e o JID que esta sessao ja pareou (coluna sessions.jid),
+	// vazio para sessao nova. A engine usa para carregar o device certo
+	// quando varias sessoes compartilham o mesmo store.
+	StoredJID string
 }
 
 type Factory func(deps Deps) (Engine, error)

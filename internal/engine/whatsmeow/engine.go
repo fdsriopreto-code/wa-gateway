@@ -13,6 +13,7 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
+	waStore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	waEvents "go.mau.fi/whatsmeow/types/events"
@@ -87,10 +88,24 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.fail()
 		return fmt.Errorf("sqlstore: %w", err)
 	}
-	device, err := container.GetFirstDevice(ctx)
-	if err != nil {
-		e.fail()
-		return fmt.Errorf("get device: %w", err)
+
+	// IMPORTANTE: o sqlstore guarda TODOS os devices (de todas as sessoes) na
+	// mesma tabela. GetFirstDevice pegaria sempre o device #1 -> multi-sessao
+	// quebrada (duas sessoes logando com o mesmo numero). Selecionamos pelo
+	// JID que a sessao ja pareou; sem JID = sessao nova = device novo (QR).
+	var device *waStore.Device
+	if e.deps.StoredJID != "" {
+		jid, perr := types.ParseJID(e.deps.StoredJID)
+		if perr == nil {
+			device, err = container.GetDevice(ctx, jid)
+			if err != nil {
+				e.fail()
+				return fmt.Errorf("get device %s: %w", jid, err)
+			}
+		}
+	}
+	if device == nil {
+		device = container.NewDevice() // sera salvo automaticamente no pareamento
 	}
 
 	clientLog := waLog.Stdout("wa/"+e.deps.Session, "INFO", false)

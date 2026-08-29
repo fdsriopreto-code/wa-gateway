@@ -24,14 +24,16 @@ const (
 )
 
 var (
-	ErrNotFound  = store.ErrNotFound
-	ErrLocked    = errors.New("sessao pertence a outro no")
-	ErrNotActive = errors.New("sessao nao esta ativa neste no")
+	ErrNotFound    = store.ErrNotFound
+	ErrLocked      = errors.New("sessao pertence a outro no")
+	ErrNotActive   = errors.New("sessao nao esta ativa neste no")
+	ErrJIDConflict = errors.New("conflito de JID entre sessoes")
 )
 
 type handle struct {
 	eng    engine.Engine
 	stopCh chan struct{}
+	jid    string // JID pareado, quando conhecido (para detectar colisao)
 }
 
 type Manager struct {
@@ -130,6 +132,20 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		return err
 	}
 
+	// Guarda contra colisao de device: duas sessoes nao podem apontar para o
+	// mesmo JID pareado (WhatsApp derruba uma). Acontece se um registro ficou
+	// com o jid errado.
+	if rec.JID != "" {
+		m.mu.RLock()
+		for other, hd := range m.running {
+			if other != name && hd.jid == rec.JID {
+				m.mu.RUnlock()
+				return fmt.Errorf("%w: JID %s ja em uso pela sessao %q — apague e recrie esta sessao", ErrJIDConflict, rec.JID, other)
+			}
+		}
+		m.mu.RUnlock()
+	}
+
 	ok, err := m.cache.AcquireLock(ctx, lockKey(name), m.nodeID, lockTTL)
 	if err != nil {
 		return fmt.Errorf("lock: %w", err)
@@ -155,6 +171,7 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		Emit:      m.emit(name, engName),
 		Media:     m.media,
 		RawEvents: func() bool { return m.sessionWantsRaw(name) },
+		StoredJID: rec.JID,
 	})
 	if err != nil {
 		_ = m.cache.ReleaseLock(ctx, lockKey(name), m.nodeID)
@@ -172,6 +189,11 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		_ = m.Stop(ctx, name, false)
 		return err
 	}
+	m.mu.Lock()
+	if hh := m.running[name]; hh != nil {
+		hh.jid = eng.JID()
+	}
+	m.mu.Unlock()
 	_ = m.store.SetSessionStatus(ctx, name, string(eng.Status()), eng.JID())
 	m.log.Info("sessao iniciada", "session", name, "engine", engName)
 	return nil
@@ -269,7 +291,15 @@ func (m *Manager) emit(name, engName string) func(events.Event) {
 
 		if e.Name == events.SessionStatus {
 			if eng, ok := m.Engine(name); ok {
-				_ = m.store.SetSessionStatus(context.Background(), name, string(eng.Status()), eng.JID())
+				jid := eng.JID()
+				_ = m.store.SetSessionStatus(context.Background(), name, string(eng.Status()), jid)
+				if jid != "" {
+					m.mu.Lock()
+					if hh := m.running[name]; hh != nil {
+						hh.jid = jid
+					}
+					m.mu.Unlock()
+				}
 			}
 		}
 	}
