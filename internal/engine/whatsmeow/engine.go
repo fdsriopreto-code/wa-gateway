@@ -91,21 +91,13 @@ func (e *Engine) Start(ctx context.Context) error {
 
 	// IMPORTANTE: o sqlstore guarda TODOS os devices (de todas as sessoes) na
 	// mesma tabela. GetFirstDevice pegaria sempre o device #1 -> multi-sessao
-	// quebrada (duas sessoes logando com o mesmo numero). Selecionamos pelo
-	// JID que a sessao ja pareou; sem JID = sessao nova = device novo (QR).
-	var device *waStore.Device
-	if e.deps.StoredJID != "" {
-		jid, perr := types.ParseJID(e.deps.StoredJID)
-		if perr == nil {
-			device, err = container.GetDevice(ctx, jid)
-			if err != nil {
-				e.fail()
-				return fmt.Errorf("get device %s: %w", jid, err)
-			}
-		}
-	}
-	if device == nil {
-		device = container.NewDevice() // sera salvo automaticamente no pareamento
+	// quebrada. Selecionamos o device desta sessao pelo numero (User do JID)
+	// que ela ja pareou. Busca por numero e tolerante a diferenca de sufixo
+	// de device/agente entre o que guardamos e o que o whatsmeow guarda.
+	device, err := e.pickDevice(ctx, container)
+	if err != nil {
+		e.fail()
+		return err
 	}
 
 	clientLog := waLog.Stdout("wa/"+e.deps.Session, "INFO", false)
@@ -118,6 +110,11 @@ func (e *Engine) Start(ctx context.Context) error {
 	e.mu.Unlock()
 
 	needsQR := client.Store.ID == nil
+	if needsQR {
+		e.deps.Logger.Info("device novo — vai pedir QR", "storedJID", e.deps.StoredJID)
+	} else {
+		e.deps.Logger.Info("device carregado do store — reconectando sem QR", "jid", client.Store.ID.String())
+	}
 	if needsQR {
 		qrChan, err := client.GetQRChannel(e.ctx)
 		if err != nil {
@@ -136,6 +133,38 @@ func (e *Engine) Start(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// pickDevice escolhe o device desta sessao: procura no store um device cujo
+// numero (User do JID) bata com o que a sessao ja pareou. Se nao achar,
+// devolve um device novo (fluxo de QR).
+func (e *Engine) pickDevice(ctx context.Context, container *sqlstore.Container) (*waStore.Device, error) {
+	if e.deps.StoredJID == "" {
+		return container.NewDevice(), nil
+	}
+	want, perr := types.ParseJID(e.deps.StoredJID)
+	if perr != nil || want.User == "" {
+		e.deps.Logger.Warn("StoredJID invalido, tratando como sessao nova", "storedJID", e.deps.StoredJID, "err", perr)
+		return container.NewDevice(), nil
+	}
+
+	all, err := container.GetAllDevices(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listar devices: %w", err)
+	}
+	have := make([]string, 0, len(all))
+	for _, d := range all {
+		if d.ID == nil {
+			continue
+		}
+		have = append(have, d.ID.String())
+		if d.ID.User == want.User {
+			return d, nil
+		}
+	}
+	e.deps.Logger.Warn("device do numero nao encontrado no store — vai pedir QR",
+		"quero", want.User, "devicesNoStore", have)
+	return container.NewDevice(), nil
 }
 
 func (e *Engine) pumpQR(ch <-chan whatsmeow.QRChannelItem) {
