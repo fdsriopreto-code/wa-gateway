@@ -157,8 +157,16 @@ Desligado por padrão. Com `MEDIA_BACKEND=s3` usa um bucket S3-compatível
 `GET /api/media/{id}` faz stream do binário guardado; `?redirect=true` devolve
 302 pra uma URL temporária assinada (ou `S3_PUBLIC_BASE_URL` se setado).
 
-> A ingestão automática de mídia **recebida** (baixar do WhatsApp e guardar no
-> bucket) ainda não está ligada — é o próximo passo da Fase 2.
+**Ingestão automática:** com o backend ligado, toda mídia **recebida** (imagem,
+áudio, vídeo, documento, sticker) é baixada, descriptografada
+(`whatsmeow.DownloadAny`) e guardada no bucket. O evento `message` ganha:
+
+```json
+"media": { "id": "<msgId>", "url": "/api/media/<msgId>", "mimetype": "image/webp", "size": 248526 }
+```
+
+O download roda inline no recebimento (timeout 45s); se falhar,
+`"media": { "error": "…" }`.
 
 ## Eventos
 
@@ -174,8 +182,9 @@ Assinatura por wildcard: `message.*`, `session.*`, `*`.
 - **`message.any`** → todas, inclusive as que você mandou.
 - **`message.ack`** → recibos (`delivered` / `read` / `played` / `retry`).
 
-O payload é achatado (o struct cru do whatsmeow fica em `raw`). Endereços
-`@lid` são resolvidos para o telefone (`@s.whatsapp.net`) quando possível:
+O payload é achatado. Endereços `@lid` são resolvidos para o telefone
+(`@s.whatsapp.net`) quando possível. O struct cru do whatsmeow **não vem por
+padrão** — ligue `config.rawEvents: true` na sessão para receber `raw`.
 
 ```json
 {
@@ -190,10 +199,13 @@ O payload é achatado (o struct cru do whatsmeow fica em `raw`). Endereços
   "timestamp": 1756499088,
   "body": "Oi",
   "quotedId": "",
-  "mentions": [],
-  "raw": { }
+  "mentions": []
 }
 ```
+
+Campos extras conforme o caso: `media` (quando há mídia e o backend S3 está
+ligado), `reaction`, `chatLid`, `author` (em grupo), `hasMedia` / `mediaType`,
+e `raw` (só com `config.rawEvents: true`).
 
 `type`: `text` · `image` · `video` · `audio` · `document` · `sticker` ·
 `location` · `contact` · `reaction` · `poll` · `poll_vote` ·

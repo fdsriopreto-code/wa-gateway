@@ -154,23 +154,59 @@ func (e *Engine) handleEvent(raw any) {
 		e.mu.Unlock()
 	}
 
-	// mensagens e recibos saem com payload normalizado (achatado). O struct
-	// cru continua acessivel em payload["raw"].
+	// mensagens e recibos saem com payload normalizado (achatado). "raw" so
+	// entra se a sessao pediu (config.rawEvents).
 	switch ev := raw.(type) {
 	case *waEvents.Message:
-		p := normalizeMessage(ev)
+		p := normalizeMessage(ev, e.wantRaw())
+		e.attachMedia(p, ev)
 		e.emit("message.any", p)
 		if !ev.Info.IsFromMe {
 			e.emit("message", p) // recebidas: o que um bot assina
 		}
 		return
 	case *waEvents.Receipt:
-		e.emit("message.ack", normalizeReceipt(ev))
+		e.emit("message.ack", normalizeReceipt(ev, e.wantRaw()))
 		return
 	}
 
 	name, payload := translate(raw)
 	e.emit(name, payload)
+}
+
+func (e *Engine) wantRaw() bool {
+	return e.deps.RawEvents != nil && e.deps.RawEvents()
+}
+
+// attachMedia baixa+descriptografa a midia recebida e guarda no backend,
+// anexando um campo "media" no payload. Roda inline (com timeout) e so
+// quando ha um MediaSink habilitado.
+func (e *Engine) attachMedia(p map[string]any, ev *waEvents.Message) {
+	if e.deps.Media == nil || !e.deps.Media.Enabled() || ev.Info.MediaType == "" || ev.Message == nil {
+		return
+	}
+	e.mu.RLock()
+	client := e.client
+	e.mu.RUnlock()
+	if client == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	data, err := client.DownloadAny(ctx, ev.Message)
+	if err != nil {
+		p["media"] = map[string]any{"error": "download: " + err.Error()}
+		return
+	}
+	mime := mediaMime(ev.Message)
+	url, size, err := e.deps.Media.Store(ctx, e.deps.Session, ev.Info.ID, mime, data)
+	if err != nil {
+		p["media"] = map[string]any{"error": "store: " + err.Error()}
+		return
+	}
+	p["media"] = map[string]any{"id": ev.Info.ID, "url": url, "mimetype": mime, "size": size}
 }
 
 func (e *Engine) emit(name string, payload any) {

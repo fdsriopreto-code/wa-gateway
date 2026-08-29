@@ -165,6 +165,14 @@ type Engine interface {
 	JoinGroupWithLink(ctx context.Context, code string) (string, error)
 }
 
+// MediaSink recebe binarios de midia ja descriptografados para armazenar.
+// Implementado quando MEDIA_BACKEND != none; pode ser nil.
+type MediaSink interface {
+	Enabled() bool
+	// Store guarda o binario e devolve a URL relativa de download.
+	Store(ctx context.Context, session, msgID, mimetype string, data []byte) (url string, size int, err error)
+}
+
 // Deps e o que o gateway injeta em cada engine.
 type Deps struct {
 	Session string
@@ -173,6 +181,12 @@ type Deps struct {
 	Logger *slog.Logger
 	// Emit publica um evento canonico no barramento interno.
 	Emit func(events.Event)
+	// Media, se != nil e Enabled(), faz a engine baixar+guardar a midia
+	// recebida e anexar um campo "media" no payload da mensagem.
+	Media MediaSink
+	// RawEvents diz se o payload de mensagem/recibo deve incluir "raw" (o
+	// struct cru da engine). Default (nil): nao inclui.
+	RawEvents func() bool
 }
 
 type Factory func(deps Deps) (Engine, error)

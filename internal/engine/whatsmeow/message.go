@@ -7,9 +7,9 @@ import (
 )
 
 // normalizeMessage achata um *events.Message num payload estavel e enxuto,
-// no estilo do WAHA/Evolution, mas com nomes proprios. O struct cru do
-// whatsmeow vai em "raw" para quem precisar de tudo.
-func normalizeMessage(evt *waEvents.Message) map[string]any {
+// no estilo do WAHA/Evolution, mas com nomes proprios. Com includeRaw, o
+// struct cru do whatsmeow vai em "raw".
+func normalizeMessage(evt *waEvents.Message, includeRaw bool) map[string]any {
 	info := evt.Info
 	msg := evt.Message
 
@@ -32,7 +32,9 @@ func normalizeMessage(evt *waEvents.Message) map[string]any {
 		"type":      kind,
 		"timestamp": info.Timestamp.Unix(),
 		"body":      body,
-		"raw":       evt,
+	}
+	if includeRaw {
+		out["raw"] = evt
 	}
 	if info.Chat.Server == types.HiddenUserServer {
 		out["chatLid"] = info.Chat.String()
@@ -62,7 +64,7 @@ func normalizeMessage(evt *waEvents.Message) map[string]any {
 }
 
 // normalizeReceipt achata um recibo de entrega/leitura.
-func normalizeReceipt(evt *waEvents.Receipt) map[string]any {
+func normalizeReceipt(evt *waEvents.Receipt, includeRaw bool) map[string]any {
 	kind := "delivered"
 	switch evt.Type {
 	case types.ReceiptTypeRead, types.ReceiptTypeReadSelf:
@@ -74,13 +76,36 @@ func normalizeReceipt(evt *waEvents.Receipt) map[string]any {
 	case types.ReceiptTypeSender:
 		kind = "sender"
 	}
-	return map[string]any{
+	out := map[string]any{
 		"ids":       evt.MessageIDs,
 		"chatId":    jidStr(preferPN(evt.Chat, evt.SenderAlt)),
 		"from":      jidStr(preferPN(evt.Sender, evt.SenderAlt)),
 		"type":      kind,
 		"timestamp": evt.Timestamp.Unix(),
-		"raw":       evt,
+	}
+	if includeRaw {
+		out["raw"] = evt
+	}
+	return out
+}
+
+// mediaMime extrai o mimetype da parte de midia da mensagem.
+func mediaMime(m *waProto.Message) string {
+	switch {
+	case m == nil:
+		return ""
+	case m.GetImageMessage() != nil:
+		return m.GetImageMessage().GetMimetype()
+	case m.GetVideoMessage() != nil:
+		return m.GetVideoMessage().GetMimetype()
+	case m.GetAudioMessage() != nil:
+		return m.GetAudioMessage().GetMimetype()
+	case m.GetDocumentMessage() != nil:
+		return m.GetDocumentMessage().GetMimetype()
+	case m.GetStickerMessage() != nil:
+		return m.GetStickerMessage().GetMimetype()
+	default:
+		return ""
 	}
 }
 

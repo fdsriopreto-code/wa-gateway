@@ -336,32 +336,78 @@ views.overview = { title: "Visão geral", async render(root) {
 
 views.sessions = { title: "Sessões", async render(root) {
   const page = h("div", { class: "page" }); root.append(page);
-  page.append(h("div", { class: "page-head" }, h("h2", {}, "Sessões"), h("p", {}, "Cada sessão é um número de WhatsApp conectado.")));
+  page.append(h("div", { class: "page-head" }, h("h2", {}, "Sessões"), h("p", {}, "Status atualiza sozinho. Sessões conectadas voltam automaticamente se o servidor reiniciar.")));
+  const grid = h("div", { class: "sess-grid" });
+  const refs = new Map();          // name -> { card, badgeSlot, qrSlot, status }
+  const pendingQR = new Set();     // nomes onde o usuário pediu start e espera o QR
+  let poll = null;
+  const done = (s) => ["WORKING", "FAILED", "STOPPED", "LOGGED_OUT"].includes(s);
+
+  const buildCard = (s) => {
+    const badgeSlot = h("span", { class: "badge-slot" }, badge(s.status));
+    const qrSlot = h("div", { class: "qr-slot" });
+    const act = (verb, fn, dg) => h("button", { class: "btn ghost sm" + (dg ? " danger" : ""), onclick: async (e) => {
+      e.target.disabled = true;
+      try {
+        await apiData("POST", `/api/sessions/${s.name}/${fn}`);
+        if (fn === "start" || fn === "restart") pendingQR.add(s.name);
+        ok(`${s.name}: ${verb}`); await refresh();
+      } catch (err) { fail(err); } finally { e.target.disabled = false; }
+    } }, verb);
+    const card = h("div", { class: "card sess", "data-name": s.name },
+      h("div", { class: "top" },
+        h("div", {}, h("div", { class: "nm" }, s.name),
+          h("div", { class: "sub" }, h("span", {}, "engine: " + s.engine), h("span", { class: "mono jid" }, s.jid || "sem JID"))),
+        badgeSlot),
+      qrSlot,
+      h("div", { class: "acts" },
+        act("start", "start"), act("stop", "stop"), act("restart", "restart"), act("logout", "logout"),
+        h("button", { class: "btn ghost sm", onclick: () => cfgModal(s) }, "config"),
+        h("button", { class: "btn ghost sm danger", onclick: async () => {
+          if (!confirm(`apagar "${s.name}"?`)) return;
+          try { await apiData("DELETE", `/api/sessions/${s.name}`); ok("apagada"); await refresh(); } catch (e) { fail(e); }
+        } }, "apagar")));
+    setQR(qrSlot, s.name, s.status);
+    refs.set(s.name, { card, badgeSlot, qrSlot, status: s.status });
+    return card;
+  };
+  const setQR = (slot, name, status) => {
+    clear(slot);
+    if (status === "SCAN_QR_CODE") slot.append(h("button", { class: "btn sm", onclick: () => qrModal(name) }, "📷 Escanear QR"));
+  };
+  const apply = (s) => {
+    const r = refs.get(s.name); if (!r) return;
+    r.card.querySelector(".jid").textContent = s.jid || "sem JID";
+    if (s.status !== r.status) {
+      clear(r.badgeSlot); r.badgeSlot.append(badge(s.status));
+      setQR(r.qrSlot, s.name, s.status);
+      r.status = s.status;
+      if (s.status === "SCAN_QR_CODE" && pendingQR.has(s.name)) { pendingQR.delete(s.name); qrModal(s.name); }
+      if (s.status === "WORKING" && pendingQR.has(s.name)) { pendingQR.delete(s.name); ok(s.name + " conectada ✓"); }
+    }
+  };
+  const refresh = async () => {
+    let list; try { list = await apiData("GET", "/api/sessions") || []; } catch { return; }
+    SESSIONS = list;
+    const now = list.map((s) => s.name).sort().join(",");
+    const had = [...refs.keys()].sort().join(",");
+    if (now !== had) { rebuild(list); return; }
+    list.forEach(apply);
+    if (poll && list.every((s) => done(s.status)) && pendingQR.size === 0) { /* mantém: status pode mudar por fora */ }
+  };
+  const rebuild = (list) => {
+    clear(grid); refs.clear();
+    if (!list.length) { grid.append(empty("◉", "nenhuma sessão ainda")); return; }
+    list.forEach((s) => grid.append(buildCard(s)));
+  };
+
   await withLoad(page, async () => {
     const list = await loadSessions();
-    const grid = h("div", { class: "sess-grid" });
-    list.forEach((s) => {
-      const act = (verb, fn, dg) => h("button", { class: "btn ghost sm" + (dg ? " danger" : ""), onclick: async (e) => {
-        e.target.disabled = true;
-        try { await apiData("POST", `/api/sessions/${s.name}/${fn}`); ok(`${s.name}: ${verb}`); route(); }
-        catch (err) { fail(err); e.target.disabled = false; }
-      } }, verb);
-      grid.append(h("div", { class: "card sess" },
-        h("div", { class: "top" },
-          h("div", {}, h("div", { class: "nm" }, s.name),
-            h("div", { class: "sub" }, h("span", {}, "engine: " + s.engine), h("span", { class: "mono" }, s.jid || "sem JID"))),
-          badge(s.status)),
-        s.status === "SCAN_QR_CODE" ? h("button", { class: "btn sm", onclick: () => qrModal(s.name) }, "📷 Escanear QR") : null,
-        h("div", { class: "acts" },
-          act("start", "start"), act("stop", "stop"), act("restart", "restart"), act("logout", "logout"),
-          h("button", { class: "btn ghost sm", onclick: () => cfgModal(s) }, "config"),
-          h("button", { class: "btn ghost sm danger", onclick: async () => {
-            if (!confirm(`apagar "${s.name}"?`)) return;
-            try { await apiData("DELETE", `/api/sessions/${s.name}`); ok("apagada"); route(); } catch (e) { fail(e); }
-          } }, "apagar"))));
-    });
+    rebuild(list);
+    poll = setInterval(refresh, 2500);
+    window.addEventListener("hashchange", () => clearInterval(poll), { once: true });
     page.append(
-      list.length ? grid : empty("◉", "nenhuma sessão ainda"),
+      grid,
       h("div", { class: "sec-title" }, "Nova sessão"),
       h("div", { class: "card pad" },
         h("div", { class: "frow" },

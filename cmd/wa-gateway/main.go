@@ -86,8 +86,28 @@ func run() error {
 
 	dispatcher := webhook.NewDispatcher(st, asynqClient, log, cfg.WebhookTimeout, cfg.WebhookMaxAttempts)
 
+	// ---- armazenamento de midia (opcional) ----
+	var mediaStore media.Store = media.Disabled{}
+	if cfg.MediaBackend == "s3" {
+		mediaStore, err = media.NewS3(ctx, media.S3Config{
+			Endpoint:      cfg.S3Endpoint,
+			Region:        cfg.S3Region,
+			Bucket:        cfg.S3Bucket,
+			AccessKey:     cfg.S3AccessKey,
+			SecretKey:     cfg.S3SecretKey,
+			UseSSL:        cfg.S3UseSSL,
+			PathStyle:     cfg.S3PathStyle,
+			PublicBaseURL: cfg.S3PublicBaseURL,
+		})
+		if err != nil {
+			return err
+		}
+		log.Info("armazenamento de midia: s3", "bucket", cfg.S3Bucket, "endpoint", cfg.S3Endpoint)
+	}
+
 	// ---- sessoes ----
-	mgr := session.NewManager(st, rc, bus, log, cfg.DatabaseURL, cfg.NodeID, cfg.DefaultEngine)
+	mgr := session.NewManager(st, rc, bus, log, cfg.DatabaseURL, cfg.NodeID, cfg.DefaultEngine,
+		media.NewSink(mediaStore, st))
 
 	// ---- fila de saida (pacing anti-ban) ----
 	outQueue := outbox.NewQueue(asynqClient, rc, outbox.Defaults{Pace: outbox.Pace{
@@ -109,25 +129,6 @@ func run() error {
 		return err
 	}
 	defer asynqSrv.Shutdown()
-
-	// ---- armazenamento de midia (opcional) ----
-	var mediaStore media.Store = media.Disabled{}
-	if cfg.MediaBackend == "s3" {
-		mediaStore, err = media.NewS3(ctx, media.S3Config{
-			Endpoint:      cfg.S3Endpoint,
-			Region:        cfg.S3Region,
-			Bucket:        cfg.S3Bucket,
-			AccessKey:     cfg.S3AccessKey,
-			SecretKey:     cfg.S3SecretKey,
-			UseSSL:        cfg.S3UseSSL,
-			PathStyle:     cfg.S3PathStyle,
-			PublicBaseURL: cfg.S3PublicBaseURL,
-		})
-		if err != nil {
-			return err
-		}
-		log.Info("armazenamento de midia: s3", "bucket", cfg.S3Bucket, "endpoint", cfg.S3Endpoint)
-	}
 
 	// ---- websocket ----
 	hub := ws.NewHub(log)

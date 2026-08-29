@@ -8,6 +8,9 @@ type Config struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 	Webhooks []WebhookConfig   `json:"webhooks,omitempty"`
 	Outbox   *OutboxConfig     `json:"outbox,omitempty"`
+	// RawEvents inclui o struct cru da engine em payload.raw nos eventos de
+	// mensagem/recibo. Default false (payload enxuto).
+	RawEvents bool `json:"rawEvents,omitempty"`
 }
 
 // OutboxConfig sobrescreve, para esta sessao, o pacing global da fila de

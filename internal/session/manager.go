@@ -42,17 +42,43 @@ type Manager struct {
 	dsn           string
 	nodeID        string
 	defaultEngine string
+	media         engine.MediaSink
 
 	mu      sync.RWMutex
 	running map[string]*handle
+
+	rawCache sync.Map // name -> rawFlag
 }
 
-func NewManager(st *store.Store, rc *cache.Redis, bus *events.Bus, log *slog.Logger, dsn, nodeID, defaultEngine string) *Manager {
+type rawFlag struct {
+	on  bool
+	exp time.Time
+}
+
+func NewManager(st *store.Store, rc *cache.Redis, bus *events.Bus, log *slog.Logger, dsn, nodeID, defaultEngine string, media engine.MediaSink) *Manager {
 	return &Manager{
 		store: st, cache: rc, bus: bus, log: log,
-		dsn: dsn, nodeID: nodeID, defaultEngine: defaultEngine,
+		dsn: dsn, nodeID: nodeID, defaultEngine: defaultEngine, media: media,
 		running: make(map[string]*handle),
 	}
+}
+
+// sessionWantsRaw le config.rawEvents com cache curto (10s).
+func (m *Manager) sessionWantsRaw(name string) bool {
+	if v, ok := m.rawCache.Load(name); ok {
+		f := v.(rawFlag)
+		if time.Now().Before(f.exp) {
+			return f.on
+		}
+	}
+	on := false
+	if rec, err := m.store.GetSession(context.Background(), name); err == nil {
+		if cfg, err := ParseConfig(rec.Config); err == nil {
+			on = cfg.RawEvents
+		}
+	}
+	m.rawCache.Store(name, rawFlag{on: on, exp: time.Now().Add(10 * time.Second)})
+	return on
 }
 
 func lockKey(name string) string { return "wa:lock:" + name }
@@ -60,6 +86,7 @@ func lockKey(name string) string { return "wa:lock:" + name }
 // Upsert cria ou atualiza o registro da sessao (sem inicia-la).
 func (m *Manager) Upsert(ctx context.Context, name string, cfg json.RawMessage) (store.SessionRecord, error) {
 	eng := m.defaultEngine
+	m.rawCache.Delete(name)
 	return m.store.UpsertSession(ctx, name, eng, cfg)
 }
 
@@ -73,6 +100,7 @@ func (m *Manager) List(ctx context.Context) ([]store.SessionRecord, error) {
 
 func (m *Manager) Delete(ctx context.Context, name string) error {
 	_ = m.Stop(ctx, name, false)
+	m.rawCache.Delete(name)
 	return m.store.DeleteSession(ctx, name)
 }
 
@@ -121,10 +149,12 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	}
 
 	eng, err := factory(engine.Deps{
-		Session: name,
-		DSN:     m.dsn,
-		Logger:  m.log.With("session", name),
-		Emit:    m.emit(name, engName),
+		Session:   name,
+		DSN:       m.dsn,
+		Logger:    m.log.With("session", name),
+		Emit:      m.emit(name, engName),
+		Media:     m.media,
+		RawEvents: func() bool { return m.sessionWantsRaw(name) },
 	})
 	if err != nil {
 		_ = m.cache.ReleaseLock(ctx, lockKey(name), m.nodeID)
