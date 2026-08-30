@@ -2,7 +2,7 @@
 
 Node comunitário do n8n para o [wa-gateway](../../README.md).
 
-Quatro nodes:
+Cinco nodes:
 
 | Node | Pra quê |
 |---|---|
@@ -10,6 +10,7 @@ Quatro nodes:
 | **wa-gateway Trigger** | Recebe eventos de uma sessão e **roteia por tipo**: saídas separadas para **Texto · Imagem · Áudio · Vídeo · Documento · Outros · Eventos** (sem precisar de Switch). Opcionalmente **baixa a mídia e anexa como binário** (`data`) pronta pro próximo node. Ao ativar o workflow, **registra a URL do webhook na sessão automaticamente**. Valida HMAC-SHA256 se você definir um segredo. |
 | **wa-gateway Fila (debounce)** | Agrupa mensagens picadas por contato (Redis). `Enfileirar` → `Wait` → `Coletar`: se chegou mensagem nova na janela, sai por **Superado** (essa execução desiste); senão sai por **Continuar** com a fila unificada em `text` / `messages`. `Cancelar` descarta lotes pendentes depois que o bot respondeu. Precisa da credencial `Redis` do n8n. |
 | **wa-gateway Pausa do bot** | Handoff humano por contato (Redis + TTL). `Pausar` quando você responde manualmente (`fromMe`), `Verificar` antes de deixar a IA responder (saídas **Ativo** / **Pausado**), `Retomar` pra devolver pro bot. Precisa da credencial `Redis` do n8n. |
+| **wa-gateway Agente** | Agente de IA **nativo do WhatsApp**. Conecte o **Chat Model** (OpenAI/Anthropic/Gemini/Ollama…) e, opcionalmente, um nó de **Memória** (chave = chatId) e nós de **Ferramenta** — reaproveita as credenciais que você já tem no n8n. Traz **ferramentas de WhatsApp embutidas** (`enviar_imagem`/`_audio`/`_documento`/`_localizacao`/`_botoes`, `checar_numero`, `listar_grupos`, `buscar_historico`, `escalar_para_humano`), **entende imagem/áudio recebidos** (baixa e manda pro modelo — visão/áudio) e **responde sozinho** pelo wa-gateway (com "digitando…"). Saídas: **Resposta · Handoff · Erro**. |
 
 ## Instalar
 
@@ -37,7 +38,16 @@ npm run build
 **Enviar uma imagem que veio de um HTTP Request / Google Drive:**
 node anterior produz binário na propriedade `data` → `wa-gateway` (Mensagem · Enviar imagem, Fonte da mídia = *Binário do nó anterior*).
 
-**Atendente de IA (mensagem picada + handoff):**
+**Atendente de IA num nó só (o jeito rápido):**
+```
+wa-gateway Trigger ──▶ wa-gateway Agente
+                         ▲ Modelo (OpenAI/Anthropic/…)   ▲ Memória (Postgres/Redis, key = {{$json.payload.chatId}})   ▲ Ferramentas (opcional)
+                       ├─ Resposta ─▶ (já enviou pro WhatsApp)
+                       ├─ Handoff  ─▶ notifica um humano
+                       └─ Erro     ─▶ log
+```
+
+**Atendente de IA (controle fino: mensagem picada + handoff):**
 ```
 wa-gateway Trigger ──▶ fromMe? ──true──▶ wa-gateway Pausa (Pausar)  ▶ (fim)
                             └──false──▶ wa-gateway Pausa (Verificar)
