@@ -75,6 +75,10 @@ Atualizado em **2026-08-30**.
   `session:*`; `sessionScopeMW` barra fora do escopo (403 `forbidden_session`),
   `GET /api/sessions` filtra, criar sessão bloqueado, `/ws` exige `?session=`.
   Console: campo "restringir a sessões" na criação de chave. Fecha o **risco #3**.
+- **Cifra de secrets em repouso** — `internal/secret` (AES-256-GCM,
+  `SECRET_KEY`). `webhooks[].hmac.secret` sai cifrado (`enc:v1:…`) no
+  Postgres; leitura decifra. Migração lazy. `/api/stats` e `/api/cluster`
+  agora exigem `canAdmin`. Fecha o **risco #5**.
 - CI completo + release automático do node n8n por tag.
 
 ---
@@ -140,7 +144,7 @@ Estado honesto depois do batch de escala/robustez.
 | 8 | **Stream `MAXLEN ~100k`.** Se TODOS os consumidores ficarem fora por mais tempo que 100k eventos, o Redis pode aparar entradas ainda não-`XACK`. | perda só se o serviço inteiro ficar down sob alto volume | consumidores moram no mesmo binário do produtor → "todos down" = serviço down | subir o `MAXLEN`, ou trim só por idade (`MINID`) preservando o PEL |
 | 3 | ~~Escopos de API key grosseiros.~~ **RESOLVIDO**: `scopes` como `session:<nome>` (ou `session:*`) + `sessionScopeMW` barram uma chave de tocar sessão fora do escopo; `GET /api/sessions` filtra; criar sessão é bloqueado; `/ws` exige `?session=`. Resta: `listDeliveries`/`retryDelivery` ainda não checam escopo de sessão (a entrega é buscada por `?session=`, então o middleware **já cobre**), mas endpoints puramente admin (`/api/keys`, `/api/stats`, `/api/cluster`) não exigem `canAdmin`. | endpoints admin abertos a qualquer chave `*` | escopo por sessão feito | gate `canAdmin` em `/api/stats`, `/api/cluster`, `/api/deliveries` |
 | 4 | **Sem dead-letter de webhook.** Depois de N tentativas o asynq desiste; a linha fica `failed` sem alerta. | entregas silenciosamente perdidas | botão "reenviar" manual no console | evento `webhook.exhausted` no próprio barramento + métrica |
-| 5 | **Segredos em texto puro.** HMAC secret do webhook mora em `sessions.config` JSONB sem cifra. | quem lê o Postgres lê os segredos | acesso ao banco já é privilegiado | cifrar campos sensíveis com uma key de env (AES-GCM) |
+| 5 | ~~Segredos em texto puro.~~ **RESOLVIDO** (`internal/secret`, `SECRET_KEY` = AES-256-GCM): `Manager.Upsert` sela `webhooks[].hmac.secret`, leitura decifra. `webhook_deliveries.payload` também. Migração lazy. Sem `SECRET_KEY` = comportamento antigo (texto puro) + warning no boot. | — | rotação de chave (`SECRET_KEY_OLD` p/ decifrar durante transição) |
 | 6 | **`migrations` sobem em todo boot sem lock explícito.** 2 nós subindo juntos podem correr. | risco baixo (goose usa `schema_migrations`) | goose serializa por versão | advisory lock no Postgres antes do `Migrate` |
 
 ### O que ficou bom
@@ -157,11 +161,13 @@ Estado honesto depois do batch de escala/robustez.
 
 ### Ordem sugerida daqui
 
-1. ~~Redis Stream no barramento~~ ✅ feito.
-2. ~~Escopos de API key por sessão~~ ✅ feito.
-3. **Cifrar segredos** (risco #5) — barato, fecha uma auditoria.
-4. `canAdmin` nos endpoints de admin (parte do #3).
-5. Labels Business · dead-letter de webhook · streaming do body no cross-node.
+1. ~~Redis Stream no barramento~~ ✅
+2. ~~Escopos de API key por sessão~~ ✅
+3. ~~Cifrar segredos + `canAdmin` nos endpoints globais~~ ✅
+4. **Labels do WhatsApp Business** — eventos `label.*` já chegam; falta
+   `GET /api/{s}/labels` + associar/desassociar.
+5. **Dead-letter de webhook** — evento `webhook.exhausted` após N falhas.
+6. Streaming do body no cross-node (risco #2) · rotação de `SECRET_KEY`.
 
 ---
 

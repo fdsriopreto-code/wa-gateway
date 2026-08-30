@@ -20,6 +20,7 @@ import (
 
 	"wa-gateway/internal/events"
 	"wa-gateway/internal/observability"
+	"wa-gateway/internal/secret"
 	"wa-gateway/internal/session"
 	"wa-gateway/internal/store"
 )
@@ -44,8 +45,12 @@ type Dispatcher struct {
 	http        *http.Client
 	maxAttempts int
 	nodeID      string
-	cfgCache    sync.Map // session -> cachedCfg
+	secretBox   *secret.Box // decifra HMAC secret vindo de sessions.config; nil-safe
+	cfgCache    sync.Map    // session -> cachedCfg
 }
+
+// SetSecretBox liga a decifragem dos secrets de webhook em repouso.
+func (d *Dispatcher) SetSecretBox(b *secret.Box) { d.secretBox = b }
 
 func NewDispatcher(st *store.Store, client *asynq.Client, log *slog.Logger, timeout time.Duration, maxAttempts int, nodeID string) *Dispatcher {
 	if maxAttempts <= 0 {
@@ -89,7 +94,11 @@ func (d *Dispatcher) sessionCfg(ctx context.Context, name string) ([]session.Web
 	if err != nil {
 		return nil, nil, false
 	}
-	cfg, err := session.ParseConfig(rec.Config)
+	raw := rec.Config
+	if d.secretBox != nil {
+		raw = session.MapWebhookSecrets(raw, d.secretBox.Open)
+	}
+	cfg, err := session.ParseConfig(raw)
 	if err != nil {
 		d.log.Warn("config de sessao invalida", "session", name, "err", err)
 		return nil, nil, false
@@ -130,9 +139,12 @@ func (d *Dispatcher) enqueue(ctx context.Context, e events.Event, metadata map[s
 		d.log.Error("marshal envelope", "err", err)
 		return nil // payload que nao serializa nao melhora com retry
 	}
-	secret := ""
+	sec := ""
 	if wh.HMAC != nil {
-		secret = wh.HMAC.Secret
+		sec = wh.HMAC.Secret // decifrado em sessionCfg
+	}
+	if d.secretBox != nil {
+		sec = d.secretBox.Seal(sec) // guarda cifrado no payload (DB + asynq)
 	}
 	attempts := d.maxAttempts
 	backoff := 5 * time.Second
@@ -152,7 +164,7 @@ func (d *Dispatcher) enqueue(ctx context.Context, e events.Event, metadata map[s
 	deliveryID := e.ID + "|" + urlKey(wh.URL)
 	p := deliverPayload{
 		DeliveryID: deliveryID, EventID: e.ID, Session: e.Session, Event: e.Name,
-		URL: wh.URL, Secret: secret, Headers: wh.Headers, Body: body,
+		URL: wh.URL, Secret: sec, Headers: wh.Headers, Body: body,
 	}
 	raw, _ := json.Marshal(p)
 
@@ -222,7 +234,11 @@ func (d *Dispatcher) Handler() asynq.HandlerFunc {
 		req.Header.Set("X-Delivery-Id", p.DeliveryID)
 		req.Header.Set("X-Webhook-Timestamp", fmt.Sprintf("%d", time.Now().UnixMilli()))
 		if p.Secret != "" {
-			req.Header.Set("X-Webhook-Signature", Sign(p.Secret, p.Body))
+			sec := p.Secret
+			if d.secretBox != nil {
+				sec = d.secretBox.Open(sec)
+			}
+			req.Header.Set("X-Webhook-Signature", Sign(sec, p.Body))
 		}
 		for k, v := range p.Headers {
 			req.Header.Set(k, v)

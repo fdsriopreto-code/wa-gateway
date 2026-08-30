@@ -16,6 +16,7 @@ import (
 	"wa-gateway/internal/engine"
 	"wa-gateway/internal/events"
 	"wa-gateway/internal/observability"
+	"wa-gateway/internal/secret"
 	"wa-gateway/internal/store"
 )
 
@@ -48,7 +49,8 @@ type Manager struct {
 	defaultEngine string
 	media         engine.MediaSink
 
-	evStream *events.Stream // log duravel; nil = só barramento in-process
+	evStream  *events.Stream // log duravel; nil = só barramento in-process
+	secretBox *secret.Box    // cifra secrets de webhook em repouso; nil-safe
 
 	mu      sync.RWMutex
 	running map[string]*handle
@@ -76,6 +78,16 @@ func (m *Manager) SetAdvertiseURL(u string) { m.advertiseURL = strings.TrimRight
 // SetEventStream liga o log durável: todo evento emitido também é gravado no
 // Redis Stream (webhook/inbox consomem de lá, com replay).
 func (m *Manager) SetEventStream(s *events.Stream) { m.evStream = s }
+
+// SetSecretBox liga a cifra em repouso dos secrets de webhook.
+func (m *Manager) SetSecretBox(b *secret.Box) { m.secretBox = b }
+
+func (m *Manager) openCfg(raw json.RawMessage) json.RawMessage {
+	if m.secretBox == nil {
+		return raw
+	}
+	return MapWebhookSecrets(raw, m.secretBox.Open)
+}
 
 // ClusterEnabled diz se o roteamento entre nós está ligado (advertiseURL set).
 func (m *Manager) ClusterEnabled() bool { return m.advertiseURL != "" }
@@ -147,7 +159,7 @@ func (m *Manager) sessionConfig(name string) Config {
 	}
 	var cfg Config
 	if rec, err := m.store.GetSession(context.Background(), name); err == nil {
-		if c, err := ParseConfig(rec.Config); err == nil {
+		if c, err := ParseConfig(m.openCfg(rec.Config)); err == nil {
 			cfg = c
 		}
 	}
@@ -164,19 +176,31 @@ func (m *Manager) sessionBehavior(name string) engine.AutoBehavior {
 
 func lockKey(name string) string { return "wa:lock:" + name }
 
-// Upsert cria ou atualiza o registro da sessao (sem inicia-la).
+// Upsert cria ou atualiza o registro da sessao (sem inicia-la). Cifra os
+// secrets de webhook antes de gravar (Get/List devolvem decifrado).
 func (m *Manager) Upsert(ctx context.Context, name string, cfg json.RawMessage) (store.SessionRecord, error) {
 	eng := m.defaultEngine
 	m.rawCache.Delete(name)
+	if m.secretBox != nil {
+		cfg = MapWebhookSecrets(cfg, m.secretBox.Seal)
+	}
 	return m.store.UpsertSession(ctx, name, eng, cfg)
 }
 
 func (m *Manager) Get(ctx context.Context, name string) (store.SessionRecord, error) {
-	return m.store.GetSession(ctx, name)
+	rec, err := m.store.GetSession(ctx, name)
+	if err == nil {
+		rec.Config = m.openCfg(rec.Config)
+	}
+	return rec, err
 }
 
 func (m *Manager) List(ctx context.Context) ([]store.SessionRecord, error) {
-	return m.store.ListSessions(ctx)
+	recs, err := m.store.ListSessions(ctx)
+	for i := range recs {
+		recs[i].Config = m.openCfg(recs[i].Config)
+	}
+	return recs, err
 }
 
 func (m *Manager) Delete(ctx context.Context, name string) error {

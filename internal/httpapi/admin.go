@@ -14,6 +14,10 @@ import (
 
 // GET /api/stats — resumo para o dashboard.
 func (d Deps) stats(w http.ResponseWriter, r *http.Request) {
+	if !canAdmin(r) {
+		writeErr(w, http.StatusForbidden, "forbidden", "precisa de uma chave sem escopo (ou a master)")
+		return
+	}
 	ctx := r.Context()
 	byStatus, err := d.Store.CountSessionsByStatus(ctx)
 	if err != nil {

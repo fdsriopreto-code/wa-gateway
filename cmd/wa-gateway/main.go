@@ -26,6 +26,7 @@ import (
 	"wa-gateway/internal/media"
 	"wa-gateway/internal/observability"
 	"wa-gateway/internal/outbox"
+	"wa-gateway/internal/secret"
 	"wa-gateway/internal/session"
 	"wa-gateway/internal/store"
 	"wa-gateway/internal/webhook"
@@ -85,11 +86,22 @@ func run() error {
 	bus.OnDrop = func(sub string) { observability.BusDropped.WithLabelValues(sub).Inc() }
 	evStream := events.NewStream(rc.Raw(), log)
 
+	secretBox, err := secret.New(cfg.SecretKey)
+	if err != nil {
+		return err
+	}
+	if secretBox.Enabled() {
+		log.Info("cifra de secrets em repouso: on")
+	} else {
+		log.Warn("SECRET_KEY não definida — secrets de webhook ficam em texto puro no Postgres")
+	}
+
 	// ---- fila / webhooks ----
 	asynqClient := asynq.NewClient(redisOpt)
 	defer asynqClient.Close()
 
 	dispatcher := webhook.NewDispatcher(st, asynqClient, log, cfg.WebhookTimeout, cfg.WebhookMaxAttempts, cfg.NodeID)
+	dispatcher.SetSecretBox(secretBox)
 
 	// ---- armazenamento de midia (opcional) ----
 	// Falha de conexao com o S3/MinIO NAO derruba o app: degrada para "sem
@@ -121,6 +133,7 @@ func run() error {
 	mgr := session.NewManager(st, rc, bus, log, cfg.DatabaseURL, cfg.NodeID, cfg.DefaultEngine,
 		media.NewSink(mediaStore, st))
 	mgr.SetEventStream(evStream)
+	mgr.SetSecretBox(secretBox)
 	if cfg.NodeAdvertiseURL != "" {
 		mgr.SetAdvertiseURL(cfg.NodeAdvertiseURL)
 		go mgr.ClusterHeartbeat(ctx)

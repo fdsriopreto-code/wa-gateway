@@ -81,8 +81,7 @@ func (d Deps) createSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "config invalida: "+err.Error())
 		return
 	}
-	rec, err := d.Manager.Upsert(r.Context(), req.Name, req.Config)
-	if err != nil {
+	if _, err := d.Manager.Upsert(r.Context(), req.Name, req.Config); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
@@ -91,8 +90,8 @@ func (d Deps) createSession(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusConflict, "start_failed", err.Error())
 			return
 		}
-		rec, _ = d.Manager.Get(r.Context(), req.Name)
 	}
+	rec, _ := d.Manager.Get(r.Context(), req.Name) // Get decifra os secrets p/ a resposta
 	writeJSON(w, http.StatusCreated, d.view(rec))
 }
 
@@ -120,11 +119,11 @@ func (d Deps) updateSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "config invalida: "+err.Error())
 		return
 	}
-	rec, err := d.Manager.Upsert(r.Context(), name, req.Config)
-	if err != nil {
+	if _, err := d.Manager.Upsert(r.Context(), name, req.Config); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	rec, _ := d.Manager.Get(r.Context(), name) // Get decifra os secrets p/ a resposta
 	writeJSON(w, http.StatusOK, d.view(rec))
 }
 

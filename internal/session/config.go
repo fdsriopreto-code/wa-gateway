@@ -50,3 +50,31 @@ func ParseConfig(raw json.RawMessage) (Config, error) {
 	err := json.Unmarshal(raw, &c)
 	return c, err
 }
+
+// MapWebhookSecrets aplica fn a cada webhooks[].hmac.secret do JSON de config
+// e devolve o JSON reescrito. Usado para cifrar/decifrar em repouso. Config
+// vazia ou sem secret volta igual.
+func MapWebhookSecrets(raw json.RawMessage, fn func(string) string) json.RawMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+	var c Config
+	if json.Unmarshal(raw, &c) != nil {
+		return raw // não mexe no que não parseia
+	}
+	touched := false
+	for i := range c.Webhooks {
+		if c.Webhooks[i].HMAC != nil && c.Webhooks[i].HMAC.Secret != "" {
+			c.Webhooks[i].HMAC.Secret = fn(c.Webhooks[i].HMAC.Secret)
+			touched = true
+		}
+	}
+	if !touched {
+		return raw
+	}
+	out, err := json.Marshal(c)
+	if err != nil {
+		return raw
+	}
+	return out
+}

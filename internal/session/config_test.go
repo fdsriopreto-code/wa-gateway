@@ -40,3 +40,31 @@ func TestParseConfig(t *testing.T) {
 		}
 	})
 }
+
+func TestMapWebhookSecrets(t *testing.T) {
+	raw := []byte(`{"metadata":{"a":"b"},"webhooks":[
+		{"url":"https://x","events":["*"],"hmac":{"secret":"top"}},
+		{"url":"https://y","events":["*"]}
+	]}`)
+
+	up := MapWebhookSecrets(raw, func(s string) string { return "ENC(" + s + ")" })
+	c, err := ParseConfig(up)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Webhooks[0].HMAC.Secret != "ENC(top)" {
+		t.Fatalf("não transformou: %q", c.Webhooks[0].HMAC.Secret)
+	}
+	if c.Webhooks[1].HMAC != nil {
+		t.Fatal("webhook sem hmac não deveria ganhar um")
+	}
+	if c.Metadata["a"] != "b" {
+		t.Fatal("resto da config deveria sobreviver")
+	}
+
+	// sem secret pra mexer -> devolve o mesmo slice
+	noop := MapWebhookSecrets([]byte(`{"webhooks":[{"url":"z","events":["*"]}]}`), func(s string) string { return "x" })
+	if string(noop) != `{"webhooks":[{"url":"z","events":["*"]}]}` {
+		t.Fatalf("deveria ser no-op: %s", noop)
+	}
+}

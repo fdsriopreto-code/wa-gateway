@@ -282,6 +282,7 @@ Tudo por env var. Padrões entre `()`.
 | `DATABASE_MAX_CONNS` (`0`→auto, mín 10) | pool pgx |
 | `REDIS_URL` (`redis://localhost:6379/0`) | Redis |
 | `API_KEY` | chave-mestra (escopo `*`). Vazia = só chaves da tabela `api_keys` |
+| `SECRET_KEY` | 64 hex (32 bytes). Liga AES-256-GCM nos secrets de webhook em repouso. Vazio = texto puro. `openssl rand -hex 32` |
 | `DEFAULT_ENGINE` (`wa-gateway`) | engine das sessões novas |
 | `WEBHOOK_TIMEOUT` (`15s`) / `WEBHOOK_MAX_ATTEMPTS` (`15`) | entrega de webhook |
 | `OUTBOX_MIN_INTERVAL` (`3s`) / `OUTBOX_JITTER` (`2s`) / `OUTBOX_DAILY_LIMIT` (`0`=∞) | pacing global da fila de saída |
@@ -331,7 +332,13 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
   middleware pega o nome da sessão (path/query/corpo, via `sessionFromRequest`)
   e 403 `forbidden_session` se `!CanSession(nome)`. `*` e `session:*` passam
   livres. Chave escopada: `GET /api/sessions` filtra pras dela, `POST
-  /api/sessions` (criar) é barrado, `/ws` exige `?session=<nome>`.
+  /api/sessions` (criar) é barrado, `/ws` exige `?session=<nome>`,
+  `/api/stats` e `/api/cluster` (globais) exigem `canAdmin`.
+- **Cifra em repouso** (`internal/secret`, `SECRET_KEY`): `Manager.Upsert`
+  sela `webhooks[].hmac.secret` antes de gravar; `Get`/`List` e o
+  `webhook.Dispatcher` decifram na leitura. Formato `enc:v1:<base64>`.
+  Migração é lazy — secret em texto puro (sem prefixo) continua funcionando
+  e vira cifrado no próximo `PUT`.
 - **Rate limit** (`rateLimitMW`): token bucket por `KeyID` no Redis, fail-open.
   Resposta `429 rate_limited` + `Retry-After` + headers `X-RateLimit-*`.
 - Rotas públicas (sem auth): `/health`, `/ready`, `/metrics`, `/api/version`,
