@@ -100,6 +100,11 @@ var specEndpoints = []ep{
 	{"POST", "/api/{session}/media/purge", "Monitor", "Apagar TODAS as mídias da sessão (ou só olderThan)", map[string]any{"olderThan": "168h"}, nil},
 	{"GET", "/api/stats", "Monitor", "Estatísticas", nil, nil},
 
+	// ---- OTP (código de verificação)
+	{"POST", "/api/{session}/otp/send", "OTP", "Gera e envia um código de verificação por WhatsApp", map[string]any{"to": "5517999999999", "brand": "ACME", "codeLength": 6, "ttlSeconds": 300}, nil},
+	{"POST", "/api/{session}/otp/verify", "OTP", "Confere o código (por to ou por id)", map[string]any{"to": "5517999999999", "code": "123456"}, nil},
+	{"POST", "/api/{session}/otp/cancel", "OTP", "Invalida o código ativo de um número", map[string]any{"to": "5517999999999"}, nil},
+
 	// ---- campanhas (envio em massa)
 	{"POST", "/api/{session}/campaign", "Campaigns", "Criar campanha (envio em massa pausado pelo pacing da fila)", map[string]any{"name": "promo julho", "kind": "text", "text": "Oi! Novidades...", "recipients": []string{"5517999999999", "5517888888888"}, "minIntervalMs": 5000, "jitterMs": 3000}, nil},
 	{"GET", "/api/campaigns", "Campaigns", "Listar campanhas", nil, []string{"session?", "limit?"}},
@@ -189,6 +194,7 @@ func (d Deps) openapiDoc(scheme, host string) map[string]any {
 			map[string]any{"name": "Groups"}, map[string]any{"name": "History"},
 			map[string]any{"name": "Monitor"}, map[string]any{"name": "Keys"},
 			map[string]any{"name": "Campaigns", "description": "Envio em massa pausado pelo pacing anti-ban."},
+			map[string]any{"name": "OTP", "description": "Código de verificação de número por WhatsApp (estilo Verify)."},
 			map[string]any{"name": "MCP", "description": "Model Context Protocol — ferramentas p/ agentes de IA."},
 		},
 		"paths": paths,

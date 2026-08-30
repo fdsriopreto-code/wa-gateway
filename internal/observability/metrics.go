@@ -56,4 +56,14 @@ var (
 		Name: "wa_messages_received_total",
 		Help: "Mensagens recebidas (nao fromMe), por sessao.",
 	}, []string{"session"})
+
+	OTPSent = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "wa_otp_sent_total",
+		Help: "Codigos OTP enviados, por sessao.",
+	}, []string{"session"})
+
+	OTPVerified = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "wa_otp_verify_total",
+		Help: "Verificacoes de OTP, por sessao e resultado (ok/mismatch/expired/locked/not_found).",
+	}, []string{"session", "result"})
 )

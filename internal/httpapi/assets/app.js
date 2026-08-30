@@ -244,7 +244,7 @@ const EVENT_CATALOG=[
 const WILDCARDS=[["*","tudo"],["message.*","mensagens"],["session.*","sessão"],["group.*","grupos"],["call.*","chamadas"]];
 
 /* ═══════════════════════════════════════════════ ENDPOINT REGISTRY */
-const GROUPS=["Sessões","Mensagens","Grupos","Contatos","Fila & monitor"];
+const GROUPS=["Sessões","Mensagens","Grupos","Contatos","OTP","Fila & monitor"];
 const ENDPOINTS=[
   {g:"Sessões",m:"GET",path:"/api/sessions",title:"Listar sessões",fields:[]},
   {g:"Sessões",m:"POST",path:"/api/sessions",title:"Criar sessão",fields:[
@@ -341,6 +341,14 @@ const ENDPOINTS=[
   {g:"Fila & monitor",m:"GET",path:"/api/stats",title:"Estatísticas",fields:[]},
   {g:"Fila & monitor",m:"GET",path:"/api/keys",title:"Listar API keys",fields:[]},
   {g:"Fila & monitor",m:"POST",path:"/api/keys",title:"Criar API key",fields:[["label","text",{}],["scopes","lines",{ph:"* (uma por linha)"}]]},
+
+  {g:"OTP",m:"POST",path:"/api/{session}/otp/send",title:"Enviar código de verificação",fields:[
+    ["session","session",{req:1}],["to","text",{req:1,ph:"5517999999999"}],["brand","text",{ph:"nome da empresa (opcional)"}],
+    ["codeLength","num",{ph:"6"}],["ttlSeconds","num",{ph:"300"}]]},
+  {g:"OTP",m:"POST",path:"/api/{session}/otp/verify",title:"Conferir código",fields:[
+    ["session","session",{req:1}],["to","text",{ph:"5517999999999 (ou use id)"}],["id","text",{ph:"otp_... (opcional)"}],["code","text",{req:1,ph:"123456"}]]},
+  {g:"OTP",m:"POST",path:"/api/{session}/otp/cancel",title:"Cancelar código ativo",fields:[
+    ["session","session",{req:1}],["to","text",{req:1,ph:"5517999999999"}]]},
 ];
 
 function fieldEl(f){

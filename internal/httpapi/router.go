@@ -86,6 +86,11 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		r.Post("/api/{session}/labels/message", d.labelMessage)
 
 		// --- dashboard / auditoria ---
+		// --- OTP (código de verificação) ---
+		r.Post("/api/{session}/otp/send", d.otpSend)
+		r.Post("/api/{session}/otp/verify", d.otpVerify)
+		r.Post("/api/{session}/otp/cancel", d.otpCancel)
+
 		// --- campanhas (envio em massa) ---
 		r.Post("/api/{session}/campaign", d.createCampaign)
 		r.Route("/api/campaigns", func(r chi.Router) {

@@ -22,6 +22,20 @@ type Config struct {
 	Media *MediaConfig `json:"media,omitempty"`
 	// AutoReply: resposta automatica (fora de horario, saudacao, palavras-chave).
 	AutoReply *AutoReplyConfig `json:"autoReply,omitempty"`
+	// OTP: padroes do sistema de codigo de verificacao (/otp/send|verify).
+	OTP *OTPConfig `json:"otp,omitempty"`
+}
+
+// OTPConfig sao os padroes por sessao do sistema de OTP. Cada campo 0/"" cai
+// no default do servidor. O corpo da request pode sobrescrever template/brand.
+type OTPConfig struct {
+	Template           string `json:"template,omitempty"`           // usa {{code}} {{brand}} {{minutes}} {{ttl}}
+	Brand              string `json:"brand,omitempty"`              // nome que aparece na mensagem
+	CodeLength         int    `json:"codeLength,omitempty"`         // default 6 (4..10)
+	TTLSeconds         int    `json:"ttlSeconds,omitempty"`         // default 300 (30..1800)
+	MaxAttempts        int    `json:"maxAttempts,omitempty"`        // default 5 (1..10)
+	ResendAfterSeconds int    `json:"resendAfterSeconds,omitempty"` // default 60
+	HourlyCap          int    `json:"hourlyCap,omitempty"`          // default 5 envios/hora/numero (0 = ilimitado)
 }
 
 // AutoReplyConfig liga a resposta automatica para mensagens recebidas em

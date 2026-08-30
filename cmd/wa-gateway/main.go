@@ -29,6 +29,7 @@ import (
 	"wa-gateway/internal/inbox"
 	"wa-gateway/internal/media"
 	"wa-gateway/internal/observability"
+	"wa-gateway/internal/otp"
 	"wa-gateway/internal/outbox"
 	"wa-gateway/internal/secret"
 	"wa-gateway/internal/session"
@@ -232,6 +233,7 @@ func run() error {
 		Hub:         hub,
 		Queue:       outQueue,
 		Campaigns:   campaigns,
+		OTP:         otp.New(rc, cfg.SecretKey),
 		Dispatcher:  dispatcher,
 		Media:       mediaStore,
 		Cache:       rc,

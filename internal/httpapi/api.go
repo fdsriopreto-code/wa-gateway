@@ -17,6 +17,7 @@ import (
 	"wa-gateway/internal/campaign"
 	"wa-gateway/internal/engine"
 	"wa-gateway/internal/media"
+	"wa-gateway/internal/otp"
 	"wa-gateway/internal/outbox"
 	"wa-gateway/internal/session"
 	"wa-gateway/internal/store"
@@ -30,6 +31,7 @@ type Deps struct {
 	Hub         *ws.Hub
 	Queue       *outbox.Queue       // fila de saida com pacing; pode ser nil
 	Campaigns   *campaign.Runner    // envio em massa; pode ser nil
+	OTP         *otp.Service        // código de verificação; pode ser nil
 	Dispatcher  *webhook.Dispatcher // p/ reenvio manual de webhook; pode ser nil
 	Media       media.Store         // armazenamento de midia; pode ser nil/Disabled
 	Cache       *cache.Redis        // p/ idempotencia; pode ser nil

@@ -466,6 +466,56 @@ var mcpTools = []mcpTool{
 		},
 	},
 	{
+		name: "send_otp", desc: "Gera um código de verificação e manda por WhatsApp. Depois confira com verify_otp. Devolve id + expiresAt.",
+		schema: obj([]string{"session", "to"}, map[string]any{
+			"session": pstr("sessão"), "to": pstr("número (dígitos E.164) ou JID"),
+			"brand":      pstr("nome que aparece na mensagem (opcional)"),
+			"codeLength": pnum("4..10 (padrão 6)"), "ttlSeconds": pnum("30..1800 (padrão 300)"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			if d.OTP == nil {
+				return nil, fmt.Errorf("OTP desligado")
+			}
+			sess := s(a, "session")
+			eng, err := d.mcpEngine(sess)
+			if err != nil {
+				return nil, err
+			}
+			opts := d.otpOptions(sess)
+			if v := s(a, "brand"); v != "" {
+				opts.Brand = v
+			}
+			if n := int(f(a, "codeLength")); n > 0 {
+				opts.CodeLength = n
+			}
+			if n := int(f(a, "ttlSeconds")); n > 0 {
+				opts.TTL = time.Duration(n) * time.Second
+			}
+			ch, err := d.OTP.Send(ctx, sess, s(a, "to"), opts)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := eng.SendText(ctx, ch.To+"@s.whatsapp.net", ch.Message, engine.MessageOpts{}); err != nil {
+				_ = d.OTP.Cancel(ctx, sess, ch.To)
+				return nil, err
+			}
+			return map[string]any{"id": ch.ID, "to": ch.To, "expiresAt": ch.ExpiresAt}, nil
+		},
+	},
+	{
+		name: "verify_otp", desc: "Confere um código de verificação. Passe to OU id, mais o code. Devolve {valid, reason, attemptsLeft}.",
+		schema: obj([]string{"session", "code"}, map[string]any{
+			"session": pstr("sessão"), "code": pstr("código digitado pelo usuário"),
+			"to": pstr("número usado no send_otp"), "id": pstr("id devolvido pelo send_otp (alternativa a to)"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			if d.OTP == nil {
+				return nil, fmt.Errorf("OTP desligado")
+			}
+			return d.OTP.Verify(ctx, s(a, "session"), s(a, "to"), s(a, "id"), s(a, "code"))
+		},
+	},
+	{
 		name: "list_groups", desc: "Lista os grupos da sessão com jid, nome e nº de participantes.",
 		schema: obj([]string{"session"}, map[string]any{"session": pstr("sessão")}),
 		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {

@@ -190,6 +190,13 @@ sequenceDiagram
 - **`outbox.Dispatch`** mapeia `Kind` → método da engine. Kinds: `text`, `image`,
   `file`, `video`, `audio`, `sticker`, `location`, `contact`, `poll`, `forward`,
   `reaction`, `delete`, `edit`.
+- **OTP** (`internal/otp`, [OTP.md](OTP.md)): `POST /api/{s}/otp/{send,verify,cancel}`.
+  `send` gera código numérico e grava só o `HMAC-SHA256(SECRET_KEY,
+  sessão|número|código)` num hash Redis (`wa:otp:<s>:<num>`) com TTL; envia
+  pela engine local (a rota tem `{session}`, então o `clusterProxyMW` já
+  levou pro nó dono). `verify` roda um Lua atômico (EXISTS → exp → tentativas
+  → compara hash → `HINCRBY attempts`), one-shot no acerto. Cooldown
+  (`wa:otp:cd:*`) e teto/hora (`wa:otp:cap:*`) são chaves com TTL próprio.
 - **Auto-resposta** (`internal/autoreply`): consumidor do Redis Stream
   (consumer group `autoreply`, padrão `message`) que, por `config.autoReply`,
   responde conversas 1:1 — saudação 1x/contato (`wa:autoreply:greeted:*`,
@@ -358,6 +365,7 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
   "rawEvents": false,   // inclui o struct cru do whatsmeow em payload.raw
   "autoRead": false,    // marca recebidas como lidas (recibo azul)
   "autoOnline": false,  // mantém presença "available" após conectar
+  "otp": { "brand": "ACME", "ttlSeconds": 600, "maxAttempts": 4, "hourlyCap": 8 }, // padrões do /otp/send — ver OTP.md
   "autoReply": {        // resposta automática p/ conversas 1:1 (grupos ignorados)
     "enabled": true,
     "greeting": "Olá! Já retornamos.",   // 1x por contato (re-envia após greetingCooldownH, default 24)

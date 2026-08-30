@@ -130,6 +130,15 @@ Atualizado em **2026-08-30**.
   Envia pela fila de saída (paced). Console: aba **Auto-resposta** no
   cfgModal. Testes de horário/parse. Follow-ups: sem IA (é regra fixa —
   quem quer LLM usa o node n8n "wa-gateway Agente"); sem métrica dedicada.
+- **OTP / código de verificação** (`internal/otp`, [OTP.md](OTP.md)) — serviço
+  estilo "Verify" pra SaaS: `POST /api/{s}/otp/send` gera código numérico,
+  guarda só o `HMAC-SHA256(SECRET_KEY, sessão|número|código)` no Redis com TTL
+  + teto de tentativas (5 → `locked`) + cooldown de reenvio (60s) + teto por
+  hora (5/número), manda pela sessão. `POST /api/{s}/otp/verify` (`{to|id, code}`)
+  → `{valid, reason, attemptsLeft}`; código certo é one-shot. `POST .../otp/cancel`.
+  `config.otp` por sessão (template/brand/ttl/limites). Métricas
+  `wa_otp_sent_total` / `wa_otp_verify_total{result}`. Sem env nem tabela nova.
+  Console: grupo **OTP** no Playground. Testes com miniredis.
 - CI completo + release automático do node n8n por tag.
 
 ---

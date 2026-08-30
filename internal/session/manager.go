@@ -243,6 +243,11 @@ func (m *Manager) AutoReplyConfig(name string) *AutoReplyConfig {
 	return m.sessionConfig(name).AutoReply
 }
 
+// OTPConfig devolve os padrões de OTP da sessão (nil se não configurada).
+func (m *Manager) OTPConfig(name string) *OTPConfig {
+	return m.sessionConfig(name).OTP
+}
+
 func (m *Manager) sessionBehavior(name string) engine.AutoBehavior {
 	c := m.sessionConfig(name)
 	return engine.AutoBehavior{AutoRead: c.AutoRead, AutoOnline: c.AutoOnline}
