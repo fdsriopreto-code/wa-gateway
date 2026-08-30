@@ -5,12 +5,19 @@ import type {
 	INodeTypeDescription,
 	IWebhookResponseData,
 	IDataObject,
+	INodeExecutionData,
 } from 'n8n-workflow';
 import { createHmac, timingSafeEqual } from 'crypto';
 
+/** Saídas do node — uma por tipo de mensagem. Ordem = índice do output. */
+const OUTPUTS = ['Texto', 'Imagem', 'Áudio', 'Vídeo', 'Documento', 'Outros', 'Eventos'] as const;
+const IDX: Record<string, number> = { text: 0, image: 1, audio: 2, video: 3, document: 4 };
+
 /**
- * Trigger do wa-gateway: cria um webhook no n8n e o registra automaticamente
- * na config da sessão ao ativar o workflow (e remove ao desativar).
+ * Trigger do wa-gateway: recebe eventos de uma sessão e **roteia por tipo**.
+ * Cada tipo de mensagem sai na sua própria saída — sem precisar de Switch.
+ * Opcionalmente baixa a mídia e anexa como binário (`data`), pronta pro
+ * próximo node.
  */
 export class WaGatewayTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -18,12 +25,13 @@ export class WaGatewayTrigger implements INodeType {
 		name: 'waGatewayTrigger',
 		icon: 'file:../WaGateway/waGateway.svg',
 		group: ['trigger'],
-		version: 1,
+		version: 2,
 		subtitle: '={{$parameter["session"] + " · " + ($parameter["events"] || "*")}}',
-		description: 'Recebe eventos de uma sessão do wa-gateway (mensagens, status, grupos…)',
+		description: 'Recebe eventos do wa-gateway roteando por tipo (texto, imagem, áudio, vídeo, documento…)',
 		defaults: { name: 'wa-gateway Trigger' },
 		inputs: [],
-		outputs: ['main'],
+		outputs: ['main', 'main', 'main', 'main', 'main', 'main', 'main'],
+		outputNames: [...OUTPUTS],
 		credentials: [{ name: 'waGatewayApi', required: true }],
 		webhooks: [
 			{ name: 'default', httpMethod: 'POST', responseMode: 'onReceived', path: 'webhook' },
@@ -42,8 +50,14 @@ export class WaGatewayTrigger implements INodeType {
 			},
 			{
 				displayName: 'Eventos', name: 'events', type: 'string', default: 'message',
-				placeholder: 'message, session.status, group.update  ·  ou  *',
-				description: 'Lista separada por vírgula. Aceita curinga: message.*, session.*, *',
+				placeholder: 'message  ·  message,session.status,group.update  ·  *',
+				description:
+					'O que o gateway envia. "message" = só mensagens recebidas. Eventos que não são mensagem saem na saída "Eventos".',
+			},
+			{
+				displayName: 'Baixar mídia (anexar como binário)', name: 'downloadMedia', type: 'boolean', default: true,
+				description:
+					'Whether to baixar a mídia (imagem/áudio/vídeo/documento) e anexar em binary.data, pronta pro próximo node',
 			},
 			{
 				displayName: 'Segredo HMAC', name: 'secret', type: 'string', typeOptions: { password: true }, default: '',
@@ -51,8 +65,7 @@ export class WaGatewayTrigger implements INodeType {
 			},
 			{
 				displayName: 'Registrar webhook na sessão automaticamente', name: 'autoRegister', type: 'boolean', default: true,
-				description:
-					'Whether to add/remove esta URL em config.webhooks da sessão ao ativar/desativar o workflow',
+				description: 'Whether to add/remove esta URL em config.webhooks da sessão ao ativar/desativar o workflow',
 			},
 		],
 	};
@@ -72,7 +85,6 @@ export class WaGatewayTrigger implements INodeType {
 				const secret = this.getNodeParameter('secret', '') as string;
 				const tag = nodeTag.call(this);
 				const cfg = await getConfig.call(this);
-				// remove entradas antigas deste mesmo node (ex.: URL de teste) e a URL atual
 				cfg.webhooks = (cfg.webhooks || []).filter((w) => w._n8n !== tag && w.url !== url);
 				const wh: IDataObject = { url, events: events.length ? events : ['*'], _n8n: tag };
 				if (secret) wh.hmac = { secret };
@@ -98,12 +110,15 @@ export class WaGatewayTrigger implements INodeType {
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const req = this.getRequestObject();
-		const body = req.body as IDataObject;
+		const body = (req.body || {}) as IDataObject;
 		const secret = this.getNodeParameter('secret', '') as string;
 
 		if (secret) {
 			const sig = (req.headers['x-webhook-signature'] as string) || '';
-			const raw = typeof req.rawBody === 'string' ? Buffer.from(req.rawBody) : (req.rawBody as Buffer) || Buffer.from(JSON.stringify(body));
+			const raw =
+				typeof req.rawBody === 'string'
+					? Buffer.from(req.rawBody)
+					: (req.rawBody as Buffer) || Buffer.from(JSON.stringify(body));
 			const expected = 'sha256=' + createHmac('sha256', secret).update(raw).digest('hex');
 			const a = Buffer.from(sig);
 			const b = Buffer.from(expected);
@@ -112,27 +127,65 @@ export class WaGatewayTrigger implements INodeType {
 			}
 		}
 
-		// filtro local extra (o gateway já filtra, mas caso a config divirja)
-		const evName = (body.event as string) || '';
-		const wanted = splitCsv(this.getNodeParameter('events', '') as string);
-		if (wanted.length && !wanted.some((p) => matchEvent(p, evName))) {
-			return { noWebhookResponse: false, workflowData: [[]] };
+		const ev = String(body.event || '');
+		const payload = (body.payload || {}) as IDataObject;
+		const isMsg = ev === 'message' || ev === 'message.any';
+		const type = String(payload.type || '');
+		const outIdx = isMsg ? (IDX[type] ?? 5 /* Outros */) : 6 /* Eventos */;
+
+		const item: INodeExecutionData = { json: body };
+
+		// baixa a mídia e anexa como binário (usa mediaMeta do evento —
+		// não depende do store de mensagens)
+		const wantBinary = this.getNodeParameter('downloadMedia', true) as boolean;
+		const meta = payload.mediaMeta as IDataObject | undefined;
+		const mediaUrl = (payload.media as IDataObject | undefined)?.url as string | undefined;
+		if (wantBinary && isMsg && ['image', 'audio', 'video', 'document'].includes(type) && (meta || mediaUrl)) {
+			try {
+				const creds = await this.getCredentials('waGatewayApi');
+				const b = String(creds.baseUrl).replace(/\/$/, '');
+				const session = this.getNodeParameter('session') as string;
+				let buf: { body: Buffer; headers: Record<string, string> };
+				if (mediaUrl) {
+					buf = (await this.helpers.httpRequestWithAuthentication.call(this, 'waGatewayApi', {
+						method: 'GET', url: b + mediaUrl, encoding: 'arraybuffer', returnFullResponse: true,
+					})) as any;
+				} else {
+					buf = (await this.helpers.httpRequestWithAuthentication.call(this, 'waGatewayApi', {
+						method: 'POST',
+						url: `${b}/api/${encodeURIComponent(session)}/media/download`,
+						body: { type, ...meta },
+						json: true,
+						encoding: 'arraybuffer',
+						returnFullResponse: true,
+					})) as any;
+				}
+				const mime =
+					(meta?.mimetype as string) || buf.headers['content-type'] || 'application/octet-stream';
+				const ext = mime.split('/')[1]?.split(';')[0] || 'bin';
+				const fname = (meta?.filename as string) || `${payload.id || 'media'}.${ext}`;
+				item.binary = {
+					data: await this.helpers.prepareBinaryData(Buffer.from(buf.body), fname, mime),
+				};
+			} catch (e) {
+				item.json = { ...body, _mediaDownloadError: (e as Error).message };
+			}
 		}
 
-		return { workflowData: [this.helpers.returnJsonArray([body])] };
+		const out: INodeExecutionData[][] = OUTPUTS.map(() => []);
+		out[outIdx] = [item];
+		return { workflowData: out };
 	}
 }
 
 /* ---------- helpers de config da sessão ---------- */
 type Cfg = { webhooks?: IDataObject[] } & IDataObject;
 
-/** marca estável para achar as entradas deste node ao ativar/desativar */
 function nodeTag(this: IHookFunctions): string {
 	const wf = (this.getWorkflow?.() as { id?: string } | undefined)?.id ?? 'wf';
 	const node = this.getNode?.()?.name ?? 'node';
 	return `n8n:${wf}:${node}`;
 }
-
 async function base(this: IHookFunctions): Promise<string> {
 	const creds = await this.getCredentials('waGatewayApi');
 	return String(creds.baseUrl).replace(/\/$/, '');
@@ -156,12 +209,6 @@ async function putConfig(this: IHookFunctions, cfg: Cfg): Promise<void> {
 		json: true,
 	});
 }
-
 function splitCsv(s: string): string[] {
 	return (s || '').split(',').map((x) => x.trim()).filter(Boolean);
-}
-function matchEvent(pattern: string, name: string): boolean {
-	if (pattern === '*' || pattern === name) return true;
-	if (pattern.endsWith('.*')) return name.startsWith(pattern.slice(0, -1)) || name === pattern.slice(0, -2);
-	return false;
 }

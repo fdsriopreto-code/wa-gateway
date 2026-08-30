@@ -80,6 +80,7 @@ var specEndpoints = []ep{
 	{"GET", "/api/chats", "History", "Listar conversas", nil, []string{"session", "limit?"}},
 	{"GET", "/api/chats/{chatId}/messages", "History", "Histórico da conversa", nil, []string{"session", "limit?", "before?"}},
 	{"GET", "/api/messages/{id}/download", "History", "Baixar mídia de mensagem guardada", nil, []string{"session"}},
+	{"POST", "/api/{session}/media/download", "History", "Baixar mídia direto do mediaMeta do evento (sem depender do store)", map[string]any{"type": "image", "directPath": "/v/…", "mimetype": "image/jpeg", "mediaKey": "<base64>", "fileEncSha256": "<base64>", "fileSha256": "<base64>", "fileLength": 12345}, nil},
 
 	// ---- monitor
 	{"GET", "/api/outbox", "Monitor", "Jobs da fila de saída", nil, []string{"session", "limit?"}},

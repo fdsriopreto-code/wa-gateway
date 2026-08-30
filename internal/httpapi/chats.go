@@ -104,6 +104,53 @@ func (d Deps) messageDownload(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// POST /api/{session}/media/download
+//
+// Baixa+descriptografa a mídia direto dos campos `mediaMeta` que vêm no
+// evento — não depende do store de mensagens (sem race com a persistência).
+// Os campos de bytes chegam em base64 (JSON) e o Go decodifica sozinho.
+func (d Deps) mediaDownloadDirect(w http.ResponseWriter, r *http.Request) {
+	eng, ok := d.engineFor(w, chi.URLParam(r, "session"))
+	if !ok {
+		return
+	}
+	var req struct {
+		Type          string `json:"type"`
+		DirectPath    string `json:"directPath"`
+		Mimetype      string `json:"mimetype"`
+		Filename      string `json:"filename"`
+		MediaKey      []byte `json:"mediaKey"`
+		FileSHA256    []byte `json:"fileSha256"`
+		FileEncSHA256 []byte `json:"fileEncSha256"`
+		FileLength    uint64 `json:"fileLength"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if req.DirectPath == "" || len(req.MediaKey) == 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "directPath e mediaKey sao obrigatorios (use o mediaMeta do evento)")
+		return
+	}
+	data, mime, err := eng.DownloadMedia(r.Context(), engine.StoredMedia{
+		Type: req.Type, DirectPath: req.DirectPath, Mimetype: req.Mimetype, Filename: req.Filename,
+		MediaKey: req.MediaKey, FileSHA256: req.FileSHA256, FileEncSHA256: req.FileEncSHA256, FileLength: req.FileLength,
+	})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "download_failed", err.Error())
+		return
+	}
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	if req.Filename != "" {
+		w.Header().Set("Content-Disposition", "inline; filename=\""+req.Filename+"\"")
+	}
+	_, _ = w.Write(data)
+}
+
 type forwardReq struct {
 	queueOpts
 	Session   string `json:"session"`

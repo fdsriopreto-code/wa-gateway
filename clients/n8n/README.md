@@ -7,7 +7,7 @@ Dois nodes:
 | Node | Pra quê |
 |---|---|
 | **wa-gateway** | Enviar texto/imagem/documento/vídeo/áudio/localização/enquete, reagir, encaminhar, criar/gerenciar sessões, grupos, contatos, ler histórico. Aceita **binário do nó anterior** (converte pra base64 sozinho). |
-| **wa-gateway Trigger** | Recebe eventos de uma sessão. Ao ativar o workflow, **registra a URL do webhook na config da sessão automaticamente** (e remove ao desativar). Valida HMAC-SHA256 se você definir um segredo. |
+| **wa-gateway Trigger** | Recebe eventos de uma sessão e **roteia por tipo**: saídas separadas para **Texto · Imagem · Áudio · Vídeo · Documento · Outros · Eventos** (sem precisar de Switch). Opcionalmente **baixa a mídia e anexa como binário** (`data`) pronta pro próximo node. Ao ativar o workflow, **registra a URL do webhook na sessão automaticamente**. Valida HMAC-SHA256 se você definir um segredo. |
 
 ## Instalar
 
