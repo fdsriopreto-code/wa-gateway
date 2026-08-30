@@ -19,8 +19,9 @@ type Config struct {
 	DatabaseMaxConn int
 	RedisURL        string
 
-	APIKey        string // chave-mestra opcional (escopo "*")
-	SecretKey     string // 64 hex chars (AES-256): cifra secrets em repouso. Vazio = sem cifra.
+	APIKey        string   // chave-mestra opcional (escopo "*")
+	SecretKey     string   // 64 hex chars (AES-256): cifra secrets em repouso. Vazio = sem cifra.
+	SecretKeyOld  []string // chaves antigas (CSV) — só decifram, para rotação sem downtime
 	DefaultEngine string
 
 	WebhookTimeout     time.Duration
@@ -78,6 +79,7 @@ func Load() (Config, error) {
 		RedisURL:           env("REDIS_URL", "redis://localhost:6379/0"),
 		APIKey:             env("API_KEY", ""),
 		SecretKey:          env("SECRET_KEY", ""),
+		SecretKeyOld:       splitCSV(env("SECRET_KEY_OLD", "")),
 		DefaultEngine:      env("DEFAULT_ENGINE", "wa-gateway"),
 		WebhookTimeout:     envDuration("WEBHOOK_TIMEOUT", 15*time.Second),
 		WebhookMaxAttempts: envInt("WEBHOOK_MAX_ATTEMPTS", 15),

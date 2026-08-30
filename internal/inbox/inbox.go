@@ -42,9 +42,27 @@ func (c *Consumer) handle(ctx context.Context, e events.Event) error {
 		return c.saveMessage(ctx, e.Session, p)
 	case "message.ack":
 		ids := strSlice(p["ids"])
-		if len(ids) > 0 {
-			return c.db.UpdateAck(ctx, e.Session, ids, ackNum(str(p["type"])))
+		if len(ids) == 0 {
+			return nil
 		}
+		ack := ackNum(str(p["type"]))
+		n, err := c.db.UpdateAckN(ctx, e.Session, ids, ack)
+		if err != nil {
+			return err
+		}
+		// corrida: o recibo pode chegar no mesmo lote que a mensagem e ser
+		// processado antes do SaveMessage. Uma re-tentativa curta cobre isso;
+		// se ainda nada, a mensagem não está no store (ex.: anterior ao
+		// MESSAGE_STORE) — segue sem travar a fila.
+		if n == 0 {
+			select {
+			case <-time.After(400 * time.Millisecond):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			_, err = c.db.UpdateAckN(ctx, e.Session, ids, ack)
+		}
+		return err
 	}
 	return nil
 }

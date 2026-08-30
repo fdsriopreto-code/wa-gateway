@@ -86,7 +86,7 @@ func run() error {
 	bus.OnDrop = func(sub string) { observability.BusDropped.WithLabelValues(sub).Inc() }
 	evStream := events.NewStream(rc.Raw(), log)
 
-	secretBox, err := secret.New(cfg.SecretKey)
+	secretBox, err := secret.New(cfg.SecretKey, cfg.SecretKeyOld...)
 	if err != nil {
 		return err
 	}

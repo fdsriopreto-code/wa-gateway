@@ -44,4 +44,35 @@ func TestSessionFromRequest(t *testing.T) {
 			t.Fatalf("got %q", got)
 		}
 	})
+
+	t.Run("session depois de campos aninhados", func(t *testing.T) {
+		body := `{"opts":{"a":1,"b":[1,2,{"c":3}]},"tags":["x"],"session":"vendas","text":"oi"}`
+		r := httptest.NewRequest("POST", "/api/sendText", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		if got := sessionFromRequest(r); got != "vendas" {
+			t.Fatalf("got %q", got)
+		}
+		rest, _ := io.ReadAll(r.Body)
+		if string(rest) != body {
+			t.Fatalf("corpo não restaurado: %q", rest)
+		}
+	})
+}
+
+func TestTopLevelString(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{`{"session":"a"}`, "a"},
+		{`{"x":1,"session":"b"}`, "b"},
+		{`{"o":{"session":"nested"},"session":"root"}`, "root"},
+		{`{"arr":[{"session":"x"}],"session":"y"}`, "y"},
+		{`{"session":42}`, ""},       // não-string
+		{`{"a":1,"b":`, ""},          // truncado antes do session
+		{`{"a":{"deep":{"x":1}`, ""}, // truncado dentro de aninhado
+		{`not json`, ""},
+	}
+	for _, c := range cases {
+		if got := topLevelString([]byte(c.in), "session"); got != c.want {
+			t.Errorf("topLevelString(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
 }

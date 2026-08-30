@@ -17,32 +17,48 @@ import (
 const prefix = "enc:v1:"
 
 type Box struct {
-	aead cipher.AEAD // nil = desligado (passthrough)
+	aead cipher.AEAD   // chave primária (cifra + 1ª tentativa de decifra); nil = passthrough
+	old  []cipher.AEAD // chaves antigas: só decifram (rotação sem downtime)
 }
 
-// New monta o Box. keyHex vazio => passthrough. keyHex inválido => erro
-// (falha explícita no boot é melhor que cifrar com chave errada).
-func New(keyHex string) (*Box, error) {
-	keyHex = strings.TrimSpace(keyHex)
-	if keyHex == "" {
-		return &Box{}, nil
-	}
-	key, err := hex.DecodeString(keyHex)
+func aeadFrom(keyHex string) (cipher.AEAD, error) {
+	key, err := hex.DecodeString(strings.TrimSpace(keyHex))
 	if err != nil || len(key) != 32 {
-		return nil, fmt.Errorf("SECRET_KEY deve ser 64 caracteres hex (32 bytes AES-256)")
+		return nil, fmt.Errorf("chave deve ser 64 caracteres hex (32 bytes AES-256)")
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	return &Box{aead: aead}, nil
+	return cipher.NewGCM(block)
 }
 
-// Enabled diz se há chave configurada.
+// New monta o Box. primaryHex vazio => passthrough. oldHex são chaves só de
+// leitura (rotação): valores cifrados com elas ainda abrem, novos vão com a
+// primária. Chave inválida => erro (falha explícita no boot).
+func New(primaryHex string, oldHex ...string) (*Box, error) {
+	b := &Box{}
+	if strings.TrimSpace(primaryHex) != "" {
+		a, err := aeadFrom(primaryHex)
+		if err != nil {
+			return nil, fmt.Errorf("SECRET_KEY: %w", err)
+		}
+		b.aead = a
+	}
+	for _, h := range oldHex {
+		if strings.TrimSpace(h) == "" {
+			continue
+		}
+		a, err := aeadFrom(h)
+		if err != nil {
+			return nil, fmt.Errorf("SECRET_KEY_OLD: %w", err)
+		}
+		b.old = append(b.old, a)
+	}
+	return b, nil
+}
+
+// Enabled diz se há chave primária configurada.
 func (b *Box) Enabled() bool { return b != nil && b.aead != nil }
 
 // Seal cifra s. No-op se o Box está desligado, s vazio, ou s já cifrado.
@@ -58,20 +74,25 @@ func (b *Box) Seal(s string) string {
 	return prefix + base64.RawStdEncoding.EncodeToString(ct)
 }
 
-// Open decifra s. Devolve s como está se: não tem o prefixo (texto puro
-// legado), o Box está desligado, ou a decifragem falha.
+// Open decifra s. Tenta a chave primária e depois as antigas. Devolve s como
+// está se: não tem o prefixo (texto puro legado), o Box está desligado, ou
+// nenhuma chave abre.
 func (b *Box) Open(s string) string {
 	if !strings.HasPrefix(s, prefix) || !b.Enabled() {
 		return s
 	}
 	raw, err := base64.RawStdEncoding.DecodeString(s[len(prefix):])
-	if err != nil || len(raw) < b.aead.NonceSize() {
-		return s
-	}
-	ns := b.aead.NonceSize()
-	pt, err := b.aead.Open(nil, raw[:ns], raw[ns:], nil)
 	if err != nil {
 		return s
 	}
-	return string(pt)
+	for _, a := range append([]cipher.AEAD{b.aead}, b.old...) {
+		ns := a.NonceSize()
+		if len(raw) < ns {
+			continue
+		}
+		if pt, err := a.Open(nil, raw[:ns], raw[ns:], nil); err == nil {
+			return string(pt)
+		}
+	}
+	return s
 }

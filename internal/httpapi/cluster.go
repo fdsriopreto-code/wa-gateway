@@ -63,19 +63,70 @@ func sessionFromRequest(r *http.Request) string {
 		!strings.Contains(r.Header.Get("Content-Type"), "json") {
 		return ""
 	}
-	buf, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
-	_ = r.Body.Close()
-	r.Body = io.NopCloser(bytes.NewReader(buf))
-	if err != nil {
+	// só espia os primeiros 512KB (o campo "session" fica sempre no topo do
+	// JSON) e devolve o corpo intacto via MultiReader — não bufferiza os
+	// 32MB de um envio de mídia.
+	const peek = 512 << 10
+	head := make([]byte, peek)
+	n, _ := io.ReadFull(r.Body, head)
+	head = head[:n]
+	orig := r.Body
+	r.Body = readCloser{io.MultiReader(bytes.NewReader(head), orig), orig}
+	return topLevelString(head, "session")
+}
+
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+// topLevelString varre um JSON (possivelmente truncado) e devolve o valor
+// string da chave `key` no objeto raiz. "" se não achar / truncou antes.
+func topLevelString(b []byte, key string) string {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
 		return ""
 	}
-	var b struct {
-		Session string `json:"session"`
+	for {
+		kt, err := dec.Token() // chave (ou '}')
+		if err != nil || kt == json.Delim('}') {
+			return ""
+		}
+		name, ok := kt.(string)
+		if !ok {
+			return ""
+		}
+		vt, err := dec.Token() // valor
+		if err != nil {
+			return ""
+		}
+		if d, ok := vt.(json.Delim); ok && (d == '{' || d == '[') {
+			if skipNested(dec) != nil {
+				return ""
+			}
+			continue
+		}
+		if name == key {
+			s, _ := vt.(string)
+			return s
+		}
 	}
-	if json.Unmarshal(buf, &b) != nil {
-		return ""
+}
+
+func skipNested(dec *json.Decoder) error {
+	for depth := 1; depth > 0; {
+		t, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		switch t {
+		case json.Delim('{'), json.Delim('['):
+			depth++
+		case json.Delim('}'), json.Delim(']'):
+			depth--
+		}
 	}
-	return b.Session
+	return nil
 }
 
 func proxyTo(w http.ResponseWriter, r *http.Request, base string, log *slog.Logger) {

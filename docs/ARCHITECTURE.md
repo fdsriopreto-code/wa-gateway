@@ -338,7 +338,8 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
   sela `webhooks[].hmac.secret` antes de gravar; `Get`/`List` e o
   `webhook.Dispatcher` decifram na leitura. Formato `enc:v1:<base64>`.
   Migração é lazy — secret em texto puro (sem prefixo) continua funcionando
-  e vira cifrado no próximo `PUT`.
+  e vira cifrado no próximo `PUT`. `SECRET_KEY_OLD` (CSV) = chaves antigas
+  que só decifram, para rotação sem downtime.
 - **Rate limit** (`rateLimitMW`): token bucket por `KeyID` no Redis, fail-open.
   Resposta `429 rate_limited` + `Retry-After` + headers `X-RateLimit-*`.
 - Rotas públicas (sem auth): `/health`, `/ready`, `/metrics`, `/api/version`,

@@ -37,42 +37,70 @@ type wireEvent struct {
 // NewStream cria o log e sobe o goroutine de escrita. maxLen limita o stream
 // (aprox) para nao crescer sem fim.
 func NewStream(rdb *redis.Client, log *slog.Logger) *Stream {
-	s := &Stream{rdb: rdb, maxLen: 100_000, log: log, in: make(chan Event, 8192)}
+	s := &Stream{rdb: rdb, maxLen: 100_000, log: log, in: make(chan Event, 16384)}
 	go s.writer()
 	return s
 }
 
-// Append enfileira o evento para escrita (nao bloqueia o publicador). Se o
-// buffer de escrita encher (Redis persistentemente lento), loga e perde — o
-// mesmo evento ja foi entregue best-effort pelo barramento in-process.
+// Append enfileira o evento para escrita. Nao bloqueia de imediato; se o
+// buffer estiver cheio (Redis persistentemente lento), espera ate 200ms — o
+// emit vem do goroutine de eventos do whatsmeow, entao uma pausa curta e ok,
+// travar pra sempre nao. Estourado o prazo: loga e perde (o evento ja saiu
+// best-effort pelo barramento in-process para o WS).
 func (s *Stream) Append(e Event) {
 	if s == nil {
 		return
 	}
 	select {
 	case s.in <- e:
+		return
 	default:
+	}
+	t := time.NewTimer(200 * time.Millisecond)
+	defer t.Stop()
+	select {
+	case s.in <- e:
+	case <-t.C:
 		if n := s.dropped.Add(1); n%200 == 1 && s.log != nil {
-			s.log.Error("event stream: buffer de escrita cheio, evento NAO duravel", "dropped_total", n)
+			s.log.Error("event stream: buffer cheio 200ms, evento NAO duravel", "dropped_total", n)
 		}
 	}
 }
 
+// writer drena o canal em lotes e faz XADD pipelined (menos round-trips ao
+// Redis sob carga).
 func (s *Stream) writer() {
-	for e := range s.in {
+	for first := range s.in {
+		batch := append(make([]Event, 0, 64), first)
+	drain:
+		for len(batch) < 256 {
+			select {
+			case e := <-s.in:
+				batch = append(batch, e)
+			default:
+				break drain
+			}
+		}
+		s.flush(batch)
+	}
+}
+
+func (s *Stream) flush(batch []Event) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pipe := s.rdb.Pipeline()
+	for _, e := range batch {
 		b, err := json.Marshal(wireEvent{e.ID, e.Session, e.Name, e.Engine, e.Timestamp.UnixMilli(), e.Payload})
 		if err != nil {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err = s.rdb.XAdd(ctx, &redis.XAddArgs{
+		pipe.XAdd(ctx, &redis.XAddArgs{
 			Stream: streamKey, MaxLen: s.maxLen, Approx: true,
 			Values: map[string]any{"d": b},
-		}).Err()
-		cancel()
-		if err != nil && s.log != nil {
-			s.log.Warn("event stream: XADD falhou", "err", err)
-		}
+		})
+	}
+	if _, err := pipe.Exec(ctx); err != nil && s.log != nil {
+		s.log.Warn("event stream: XADD lote falhou", "n", len(batch), "err", err)
 	}
 }
 

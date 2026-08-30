@@ -63,13 +63,23 @@ ON CONFLICT (session, jid) DO UPDATE SET
 
 // UpdateAck aplica um recibo (2=entregue, 3=lido, 4=ouvido) as mensagens dadas.
 func (s *Store) UpdateAck(ctx context.Context, session string, ids []string, ack int) error {
+	_, err := s.UpdateAckN(ctx, session, ids, ack)
+	return err
+}
+
+// UpdateAckN faz o mesmo e devolve quantas linhas casaram (0 = mensagem ainda
+// não persistida / inexistente).
+func (s *Store) UpdateAckN(ctx context.Context, session string, ids []string, ack int) (int64, error) {
 	if len(ids) == 0 {
-		return nil
+		return 0, nil
 	}
-	_, err := s.Pool.Exec(ctx,
+	tag, err := s.Pool.Exec(ctx,
 		`UPDATE messages SET ack = GREATEST(ack,$3) WHERE session=$1 AND id = ANY($2)`,
 		session, ids, ack)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 type ChatRow struct {
