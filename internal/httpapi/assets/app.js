@@ -653,21 +653,67 @@ views.sessions={title:"Sessões",async render(root){
   poll=setInterval(refresh,2500);
   addEventListener("hashchange",()=>clearInterval(poll),{once:true});
 
+  // --- Nova sessão (com escolha de motor) ---
+  const engSel=h("select",{id:"s-eng"},
+    h("option",{value:"wa-gateway"},"wa-gateway — conectar por QR / número (whatsmeow)"),
+    h("option",{value:"cloud"},"WhatsApp Cloud API — oficial da Meta (botões, listas, templates)"));
+  const cloudBox=h("div",{class:"card pad",style:"margin-top:10px;display:none;background:var(--s1)"},
+    h("p",{class:"hint",style:"margin:0 0 8px"},"Credenciais do WhatsApp Business / Cloud API (Meta for Developers → seu app → WhatsApp)."),
+    h("div",{class:"frow"},
+      h("div",{class:"field"},h("label",{},"Phone Number ID *"),h("input",{id:"c-pnid",placeholder:"123456789012345"})),
+      h("div",{class:"field"},h("label",{},"WABA ID"),h("input",{id:"c-waba",placeholder:"987654321098765"}))),
+    h("div",{class:"field"},h("label",{},"Access Token *"),h("input",{id:"c-tok",placeholder:"EAAG… (permanente, de System User)"})),
+    h("div",{class:"frow"},
+      h("div",{class:"field"},h("label",{},"Verify Token"),h("input",{id:"c-verify",placeholder:"um segredo que você inventa"})),
+      h("div",{class:"field"},h("label",{},"App Secret"),h("input",{id:"c-secret",placeholder:"valida a assinatura do webhook"}))));
+  engSel.addEventListener("change",()=>{cloudBox.style.display=engSel.value==="cloud"?"block":"none";});
+
   page.append(
     h("div",{class:"sec-title"},ic("plus","sm"),"Nova sessão"),
     h("div",{class:"card pad"},
       h("div",{class:"frow"},
         h("div",{class:"field"},h("label",{},"nome"),h("input",{id:"s-name",placeholder:"default"})),
+        h("div",{class:"field"},h("label",{},"motor"),engSel),
         h("div",{class:"field narrow"},h("label",{}," "),h("label",{class:"check"},h("input",{type:"checkbox",id:"s-start",checked:true}),"iniciar já"))),
+      cloudBox,
       h("div",{class:"btn-row",style:"margin-top:10px"},h("button",{class:"btn",onclick:async e=>{
         const name=$("#s-name").value.trim(); if(!name)return fail("nome obrigatório");
+        const body={name,start:$("#s-start").checked};
+        if(engSel.value==="cloud"){
+          const pnid=$("#c-pnid").value.trim(), tok=$("#c-tok").value.trim();
+          if(!pnid||!tok)return fail("Phone Number ID e Access Token são obrigatórios");
+          body.config={cloud:{
+            phoneNumberId:pnid, accessToken:tok,
+            wabaId:$("#c-waba").value.trim()||undefined,
+            verifyToken:$("#c-verify").value.trim()||undefined,
+            appSecret:$("#c-secret").value.trim()||undefined,
+          }};
+        }
         e.target.disabled=true;
-        try{const rec=await apiData("POST","/api/sessions",{name,start:$("#s-start").checked}); ok("criada"); LS.sess=name; route(); cfgModal(rec);}
-        catch(err){fail(err);e.target.disabled=false;}
+        try{
+          const rec=await apiData("POST","/api/sessions",body); ok("criada"); LS.sess=name;
+          if(engSel.value==="cloud") cloudSetupModal(name,body.config.cloud);
+          else cfgModal(rec);
+          route();
+        }catch(err){fail(err);e.target.disabled=false;}
       }},ic("plus","sm"),"Criar sessão")),
-      h("p",{class:"hint",style:"margin-top:8px"},"Depois de criar, abra Configurar para adicionar webhook e escolher os eventos.")),
+      h("p",{class:"hint",style:"margin-top:8px"},"wa-gateway: escaneie o QR no card. Cloud API: registre o webhook na Meta (o passo aparece ao criar).")),
   );
 }};
+
+// Passo pós-criação de sessão Cloud API: mostra a URL de webhook pra colar na Meta.
+function cloudSetupModal(name,cloud){
+  const hook=`${LS.base}/api/${encodeURIComponent(name)}/cloud/webhook`;
+  modal("Sessão Cloud criada — registre o webhook na Meta",
+    "No painel do seu App → WhatsApp → Configuration → Webhook:",
+    h("div",{},
+      h("div",{class:"field"},h("label",{},"Callback URL"),
+        h("div",{class:"out-bar"},h("code",{class:"mono wrap"},hook),copyBtn("copiar",hook))),
+      h("div",{class:"field"},h("label",{},"Verify token"),
+        h("div",{class:"out-bar"},h("code",{class:"mono"},cloud.verifyToken||"(defina um em Configurar)"),
+          cloud.verifyToken?copyBtn("copiar",cloud.verifyToken):null)),
+      h("p",{class:"hint"},"Assine o campo ",h("b",{},"messages"),". A Meta faz um GET de verificação e o gateway responde sozinho. Depois é só enviar por ",h("code",{},"/api/sendInteractive")," / ",h("code",{},"/api/sendTemplate"),".")));
+}
 
 /* ── editor de configuração da sessão (webhooks + eventos + fila) ── */
 function cfgModal(s){
@@ -690,9 +736,18 @@ function cfgModal(s){
   const autoReadChk=h("input",{type:"checkbox",checked:cfg.autoRead||undefined});
   const autoOnlineChk=h("input",{type:"checkbox",checked:cfg.autoOnline||undefined});
 
+  const isCloud=s.engine==="cloud"||!!cfg.cloud;
+  const cc=cfg.cloud||{};
+  const clPnid=h("input",{value:cc.phoneNumberId||""});
+  const clTok=h("input",{value:cc.accessToken||"",placeholder:"EAAG…"});
+  const clWaba=h("input",{value:cc.wabaId||""});
+  const clVerify=h("input",{value:cc.verifyToken||""});
+  const clSecret=h("input",{value:cc.appSecret||""});
+
   const bodyNode=h("div",{},
     h("div",{class:"tabs",style:"margin-bottom:14px"},
-      tabBtn("Webhooks",true),tabBtn("Fila de saída"),tabBtn("Avançado")),
+      tabBtn("Webhooks",true),tabBtn("Fila de saída"),tabBtn("Avançado"),
+      isCloud?tabBtn("Cloud API"):null),
     // pane webhooks
     h("div",{class:"cfg-pane","data-pane":"0"},
       whList,
@@ -715,6 +770,19 @@ function cfgModal(s){
       h("label",{class:"check",style:"margin-bottom:12px"},rawChk,h("span",{},"incluir ",h("code",{},"raw")," (struct cru do whatsmeow) nos eventos de mensagem")),
       h("details",{},h("summary",{class:"hint",style:"cursor:pointer"},"ver JSON final"),
         h("pre",{class:"out",id:"cfg-preview",style:"margin-top:8px"}))),
+    // pane cloud api
+    isCloud?h("div",{class:"cfg-pane","data-pane":"3",hidden:true},
+      h("p",{class:"hint",style:"margin-bottom:10px"},"Credenciais da WhatsApp Cloud API. Salvar reinicia a sessão com os valores novos."),
+      h("div",{class:"frow"},
+        h("div",{class:"field"},h("label",{},"Phone Number ID"),clPnid),
+        h("div",{class:"field"},h("label",{},"WABA ID"),clWaba)),
+      h("div",{class:"field"},h("label",{},"Access Token"),clTok),
+      h("div",{class:"frow"},
+        h("div",{class:"field"},h("label",{},"Verify Token"),clVerify),
+        h("div",{class:"field"},h("label",{},"App Secret"),clSecret)),
+      h("div",{class:"field",style:"margin-top:6px"},h("label",{},"Webhook (cole na Meta)"),
+        h("div",{class:"out-bar"},h("code",{class:"mono wrap"},`${LS.base}/api/${encodeURIComponent(s.name)}/cloud/webhook`),
+          copyBtn("copiar",`${LS.base}/api/${encodeURIComponent(s.name)}/cloud/webhook`)))):null,
     h("div",{class:"btn-row",style:"margin-top:18px"},
       h("button",{class:"btn",onclick:save},ic("check","sm"),"Salvar configuração")),
   );
@@ -744,6 +812,12 @@ function cfgModal(s){
     if(autoReadChk.checked)out.autoRead=true;
     if(autoOnlineChk.checked)out.autoOnline=true;
     if(cfg.metadata)out.metadata=cfg.metadata;
+    if(isCloud&&clPnid.value.trim()&&clTok.value.trim()){
+      out.cloud={phoneNumberId:clPnid.value.trim(),accessToken:clTok.value.trim()};
+      if(clWaba.value.trim())out.cloud.wabaId=clWaba.value.trim();
+      if(clVerify.value.trim())out.cloud.verifyToken=clVerify.value.trim();
+      if(clSecret.value.trim())out.cloud.appSecret=clSecret.value.trim();
+    }
     return out;
   }
   function syncPreview(){const p=$("#cfg-preview");if(p)p.textContent=JSON.stringify(collect(),null,2);}
@@ -763,7 +837,11 @@ function cfgModal(s){
   async function save(e){
     const config=collect();
     e.target.disabled=true;
-    try{await apiData("PUT",`/api/sessions/${s.name}`,{config});ok("configuração salva");m.close();route();}
+    try{
+      await apiData("PUT",`/api/sessions/${s.name}`,{config});
+      if(config.cloud){try{await apiData("POST",`/api/sessions/${encodeURIComponent(s.name)}/restart`);}catch{}}
+      ok("configuração salva");m.close();route();
+    }
     catch(err){fail(err);e.target.disabled=false;}
   }
 }

@@ -185,27 +185,41 @@ var mcpTools = []mcpTool{
 		},
 	},
 	{
-		name: "create_session", desc: "Cria uma sessão (dá o nome) e opcionalmente já inicia. Depois use session_qr ou pair_phone pra conectar o número.",
+		name: "create_session", desc: "Cria uma sessão. Motor whatsmeow (padrão, conecta por QR/pair_phone) ou Cloud API oficial (passe cloudPhoneNumberId + cloudAccessToken).",
 		schema: obj([]string{"session"}, map[string]any{
-			"session":    pstr("nome único da sessão (ex.: vendas)"),
-			"webhookUrl": pstr("opcional: URL pra receber eventos"),
-			"events":     pstr("opcional: eventos do webhook, separados por vírgula (ex.: message,session.status). Default: *"),
-			"start":      pbool("iniciar já (default true)"),
+			"session":            pstr("nome único da sessão (ex.: vendas)"),
+			"webhookUrl":         pstr("opcional: URL pra receber eventos"),
+			"events":             pstr("opcional: eventos do webhook, separados por vírgula. Default: *"),
+			"start":              pbool("iniciar já (default true)"),
+			"cloudPhoneNumberId": pstr("Cloud API: Phone Number ID (liga o motor cloud)"),
+			"cloudAccessToken":   pstr("Cloud API: access token permanente"),
+			"cloudWabaId":        pstr("Cloud API: WABA ID (opcional)"),
+			"cloudVerifyToken":   pstr("Cloud API: verify token do webhook (opcional)"),
+			"cloudAppSecret":     pstr("Cloud API: app secret p/ validar assinatura (opcional)"),
 		}),
 		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
 			name := s(a, "session")
 			if name == "" {
 				return nil, fmt.Errorf("informe 'session'")
 			}
-			var cfg json.RawMessage
+			conf := map[string]any{}
 			if u := s(a, "webhookUrl"); u != "" {
 				evs := splitComma(s(a, "events"))
 				if len(evs) == 0 {
 					evs = []string{"*"}
 				}
-				cfg, _ = json.Marshal(map[string]any{
-					"webhooks": []map[string]any{{"url": u, "events": evs}},
-				})
+				conf["webhooks"] = []map[string]any{{"url": u, "events": evs}}
+			}
+			if pn := s(a, "cloudPhoneNumberId"); pn != "" {
+				conf["cloud"] = map[string]any{
+					"phoneNumberId": pn, "accessToken": s(a, "cloudAccessToken"),
+					"wabaId": s(a, "cloudWabaId"), "verifyToken": s(a, "cloudVerifyToken"),
+					"appSecret": s(a, "cloudAppSecret"),
+				}
+			}
+			var cfg json.RawMessage
+			if len(conf) > 0 {
+				cfg, _ = json.Marshal(conf)
 			}
 			rec, err := d.Manager.Upsert(ctx, name, cfg)
 			if err != nil {

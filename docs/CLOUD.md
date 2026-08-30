@@ -25,7 +25,12 @@ histórico, n8n) não muda.
 
 ## 2. Criar a sessão no wa-gateway
 
-`POST /api/sessions` com `config.cloud`:
+**Pelo console:** aba Sessões → *Nova sessão* → em **motor** escolha
+"WhatsApp Cloud API" → preencha Phone Number ID e Access Token → Criar. Ao
+salvar, aparece a URL de webhook pra colar na Meta. Dá pra editar as
+credenciais depois em *Configurar* → aba **Cloud API**.
+
+**Pela API** — `POST /api/sessions` com `config.cloud`:
 
 ```jsonc
 {
