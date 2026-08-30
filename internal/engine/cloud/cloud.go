@@ -34,7 +34,21 @@ type Engine struct {
 
 	mu     sync.RWMutex
 	status engine.Status
+
+	// pool de download de mídia recebida: tira o fetch do caminho da resposta
+	// do webhook (a Meta espera 200 rápido).
+	mediaJobs chan mediaJob
+	mediaWG   sync.WaitGroup
 }
+
+type mediaJob struct {
+	p       map[string]any
+	mediaID string
+	mime    string
+	msgID   string
+}
+
+const mediaWorkers = 6
 
 func New(deps engine.Deps) (engine.Engine, error) {
 	if deps.Cloud == nil {
@@ -91,24 +105,58 @@ func (e *Engine) Start(ctx context.Context) error {
 		e.setStatus(engine.StatusFailed)
 		return fmt.Errorf("cloud: token inválido ou número inacessível: %w", err)
 	}
+	e.mu.Lock()
+	e.mediaJobs = make(chan mediaJob, 256)
+	e.mu.Unlock()
+	for i := 0; i < mediaWorkers; i++ {
+		e.mediaWG.Add(1)
+		go e.mediaWorker()
+	}
+
 	e.setStatus(engine.StatusWorking)
 	e.deps.Logger.Info("cloud api conectada", "number", out.DisplayNumber, "name", out.VerifiedName)
 	return nil
 }
 
+func (e *Engine) mediaWorker() {
+	defer e.mediaWG.Done()
+	e.mu.RLock()
+	jobs := e.mediaJobs
+	e.mu.RUnlock()
+	for j := range jobs {
+		e.attachMedia(j.p, j.mediaID, j.mime, j.msgID)
+		e.emitMessage(j.p)
+	}
+}
+
 func (e *Engine) Stop() error {
+	e.mu.Lock()
+	jobs := e.mediaJobs
+	e.mediaJobs = nil
+	e.mu.Unlock()
+	if jobs != nil {
+		close(jobs)
+		e.mediaWG.Wait()
+	}
 	e.setStatus(engine.StatusStopped)
 	return nil
 }
 
 func (e *Engine) Logout(context.Context) error { return e.Stop() }
 
-func (e *Engine) emit(name string, payload any) {
+func (e *Engine) emit(name string, payload any) { e.emitID("", name, payload) }
+
+// emitID publica um evento com ID explícito (idempotência em re-entregas da
+// Meta). id vazio => aleatório.
+func (e *Engine) emitID(id, name string, payload any) {
 	if e.deps.Emit == nil {
 		return
 	}
+	if id == "" {
+		id = events.NewID()
+	}
 	e.deps.Emit(events.Event{
-		ID:        events.NewID(),
+		ID:        id,
 		Session:   e.deps.Session,
 		Name:      name,
 		Timestamp: time.Now().UTC(),

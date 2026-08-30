@@ -86,7 +86,7 @@ func (m *Manager) openCfg(raw json.RawMessage) json.RawMessage {
 	if m.secretBox == nil {
 		return raw
 	}
-	return MapWebhookSecrets(raw, m.secretBox.Open)
+	return MapSecrets(raw, m.secretBox.Open)
 }
 
 // ClusterEnabled diz se o roteamento entre nós está ligado (advertiseURL set).
@@ -187,7 +187,7 @@ func (m *Manager) Upsert(ctx context.Context, name string, cfg json.RawMessage) 
 	}
 	m.rawCache.Delete(name)
 	if m.secretBox != nil {
-		cfg = MapWebhookSecrets(cfg, m.secretBox.Seal)
+		cfg = MapSecrets(cfg, m.secretBox.Seal)
 	}
 	return m.store.UpsertSession(ctx, name, eng, cfg)
 }

@@ -98,6 +98,23 @@ Atualizado em **2026-08-30**.
 
 ---
 
+## 🛠️ Endurecimento do motor Cloud API (pós-v1)
+
+Buracos da 1ª versão, todos fechados:
+
+- **Token cifrado** — `session.MapSecrets` (era `MapWebhookSecrets`) agora
+  também cobre `cloud.accessToken` / `cloud.appSecret`.
+- **Webhook síncrono + durável** — `Ingest` emite os eventos (→ Redis Stream)
+  antes do 200; só o download de mídia é async (pool de 6). Fim da janela de
+  perda entre 200 e processamento.
+- **Idempotente** — event id = `wamid` da Meta → reentrega deduplica.
+- **`SetStatusMessage`** implementado (about do perfil de negócio).
+
+Resta (menor): `Ingest` de rajada com muita mídia pode encher o pool e emitir
+só `mediaMeta` (baixa depois). Aceitável.
+
+---
+
 ## ✅ Botões e listas — **resolvido pela via certa**
 
 Como a pesquisa abaixo previu, a única forma confiável era a **API oficial**.

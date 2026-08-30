@@ -226,8 +226,7 @@ func (e *Engine) SetMessageLabel(context.Context, string, string, string, bool) 
 func (e *Engine) PairPhone(context.Context, string) (string, error) {
 	return "", engine.ErrNotSupported
 }
-func (e *Engine) SetStatusMessage(context.Context, string) error { return engine.ErrNotSupported }
-func (e *Engine) SetPresence(context.Context, bool) error        { return engine.ErrNotSupported }
+func (e *Engine) SetPresence(context.Context, bool) error { return engine.ErrNotSupported }
 func (e *Engine) SetBlocked(context.Context, string, bool) ([]string, error) {
 	return nil, engine.ErrNotSupported
 }

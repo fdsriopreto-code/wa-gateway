@@ -65,10 +65,11 @@ func ParseConfig(raw json.RawMessage) (Config, error) {
 	return c, err
 }
 
-// MapWebhookSecrets aplica fn a cada webhooks[].hmac.secret do JSON de config
-// e devolve o JSON reescrito. Usado para cifrar/decifrar em repouso. Config
-// vazia ou sem secret volta igual.
-func MapWebhookSecrets(raw json.RawMessage, fn func(string) string) json.RawMessage {
+// MapSecrets aplica fn a todo campo sensível do JSON de config (HMAC secret
+// de webhook, accessToken e appSecret da Cloud API) e devolve o JSON
+// reescrito. Usado para cifrar/decifrar em repouso. Config vazia ou sem
+// segredo volta igual (mesmo slice).
+func MapSecrets(raw json.RawMessage, fn func(string) string) json.RawMessage {
 	if len(raw) == 0 {
 		return raw
 	}
@@ -83,6 +84,16 @@ func MapWebhookSecrets(raw json.RawMessage, fn func(string) string) json.RawMess
 			touched = true
 		}
 	}
+	if c.Cloud != nil {
+		if c.Cloud.AccessToken != "" {
+			c.Cloud.AccessToken = fn(c.Cloud.AccessToken)
+			touched = true
+		}
+		if c.Cloud.AppSecret != "" {
+			c.Cloud.AppSecret = fn(c.Cloud.AppSecret)
+			touched = true
+		}
+	}
 	if !touched {
 		return raw
 	}
@@ -91,4 +102,9 @@ func MapWebhookSecrets(raw json.RawMessage, fn func(string) string) json.RawMess
 		return raw
 	}
 	return out
+}
+
+// MapWebhookSecrets: compat. Use MapSecrets.
+func MapWebhookSecrets(raw json.RawMessage, fn func(string) string) json.RawMessage {
+	return MapSecrets(raw, fn)
 }

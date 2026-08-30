@@ -106,7 +106,7 @@ func (d *Dispatcher) sessionCfg(ctx context.Context, name string) ([]session.Web
 	}
 	raw := rec.Config
 	if d.secretBox != nil {
-		raw = session.MapWebhookSecrets(raw, d.secretBox.Open)
+		raw = session.MapSecrets(raw, d.secretBox.Open)
 	}
 	cfg, err := session.ParseConfig(raw)
 	if err != nil {

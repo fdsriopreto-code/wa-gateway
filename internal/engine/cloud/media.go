@@ -89,16 +89,25 @@ func (e *Engine) Me(ctx context.Context) (engine.Me, error) {
 	var num struct {
 		VerifiedName  string `json:"verified_name"`
 		DisplayNumber string `json:"display_phone_number"`
+		QualityRating string `json:"quality_rating"`
 	}
 	if err := e.graphGET(ctx, "/"+e.cfg.PhoneNumberID, map[string]string{
-		"fields": "verified_name,display_phone_number",
+		"fields": "verified_name,display_phone_number,quality_rating",
 	}, &num); err != nil {
 		return engine.Me{}, err
 	}
 	return engine.Me{
-		JID:          e.cfg.PhoneNumberID,
+		JID:          num.DisplayNumber,
 		PushName:     num.VerifiedName,
-		Platform:     "cloud-api",
+		Platform:     "cloud-api (quality " + num.QualityRating + ")",
 		BusinessName: num.VerifiedName,
 	}, nil
+}
+
+// SetStatusMessage: o "recado" do perfil de negócio (campo about).
+func (e *Engine) SetStatusMessage(ctx context.Context, text string) error {
+	return e.graphPOST(ctx, "/"+e.cfg.PhoneNumberID+"/whatsapp_business_profile", map[string]any{
+		"messaging_product": "whatsapp",
+		"about":             text,
+	}, nil)
 }

@@ -144,7 +144,21 @@ Grupos (criar/listar/participantes), presença "digitando…", enquetes,
 desbloquear, foto/status de perfil, labels. São limitações da Cloud API, não
 do gateway — para essas, use uma sessão `whatsmeow`.
 
-## 7. Limites conhecidos
+## 7. Detalhes de implementação
+
+- **Token cifrado:** `cloud.accessToken` e `cloud.appSecret` são cifrados em
+  repouso no Postgres se `SECRET_KEY` estiver setado (igual aos secrets de
+  webhook). `GET /api/sessions/{s}` devolve decifrado.
+- **Webhook síncrono + durável:** o `Ingest` parseia e emite os eventos
+  (que entram no Redis Stream, `XACK`) **antes** de devolver 200. Só o
+  download de mídia é assíncrono (pool interno de 6). Um crash entre o 200 e
+  o processamento de texto/botão/recibo não perde nada.
+- **Idempotente:** o `id` do evento emitido é o `wamid` da Meta — se a Meta
+  reentregar (200 demorou), o dispatcher deduplica pelo mesmo TaskID.
+- **`SetStatusMessage`** grava o `about` do perfil de negócio.
+- `Me()` traz `verified_name`, número e `quality_rating`.
+
+## 8. Limites conhecidos
 
 - **Janela de 24h:** fora dela só dá pra iniciar conversa com **template**
   aprovado (regra da Meta).
@@ -152,3 +166,6 @@ do gateway — para essas, use uma sessão `whatsmeow`.
   pra Meta (`/media`) e envia por id. Mande o `data` (base64) como sempre.
 - O status `sent` da Meta vira `message.ack type=sent` (o whatsmeow não tem
   esse estágio).
+- Se o `Ingest` demorar (rajada com muita mídia), a mídia é baixada num pool
+  de 6; se o pool encher, o evento sai só com `mediaMeta` (baixe depois via
+  `POST /api/{s}/media/download`).

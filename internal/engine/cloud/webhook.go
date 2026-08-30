@@ -192,56 +192,57 @@ func (e *Engine) handleInbound(m *waInMessage, pushName string) {
 		if media.Caption != "" {
 			p["body"] = media.Caption
 		}
-		go e.attachAndEmit(p, media.ID, media.MimeType, m.ID)
-		return
-	}
-	e.emitMessage(p)
-}
-
-func (e *Engine) attachAndEmit(p map[string]any, mediaID, mime, msgID string) {
-	if e.deps.Media != nil && e.deps.Media.Enabled() {
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		data, m, err := e.fetchMedia(ctx, mediaID)
-		cancel()
-		if err != nil {
-			p["media"] = map[string]any{"error": err.Error()}
-		} else {
-			if mime == "" {
-				mime = m
-			}
-			url, size, serr := e.deps.Media.Store(context.Background(), e.deps.Session, msgID, mime, data)
-			if serr != nil {
-				p["media"] = map[string]any{"error": serr.Error()}
-			} else {
-				p["media"] = map[string]any{"id": msgID, "url": url, "mimetype": mime, "size": size}
-			}
+		e.mu.RLock()
+		jobs := e.mediaJobs
+		e.mu.RUnlock()
+		select {
+		case jobs <- mediaJob{p: p, mediaID: media.ID, mime: media.MimeType, msgID: m.ID}:
+			return // worker faz o fetch + emit
+		default:
+			// pool cheio/parado: emite já, sem a mídia baixada (o mediaMeta
+			// permite baixar depois via /media/download).
 		}
 	}
 	e.emitMessage(p)
 }
 
+// attachMedia baixa a mídia e guarda no sink; anexa "media" no payload.
+func (e *Engine) attachMedia(p map[string]any, mediaID, mime, msgID string) {
+	if e.deps.Media == nil || !e.deps.Media.Enabled() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	data, m, err := e.fetchMedia(ctx, mediaID)
+	cancel()
+	if err != nil {
+		p["media"] = map[string]any{"error": err.Error()}
+		return
+	}
+	if mime == "" {
+		mime = m
+	}
+	url, size, serr := e.deps.Media.Store(context.Background(), e.deps.Session, msgID, mime, data)
+	if serr != nil {
+		p["media"] = map[string]any{"error": serr.Error()}
+		return
+	}
+	p["media"] = map[string]any{"id": msgID, "url": url, "mimetype": mime, "size": size}
+}
+
+// emitMessage usa o wamid como ID do evento — assim uma re-entrega da Meta
+// (se o 200 demorou) produz o MESMO event id e o dispatcher dedup por TaskID.
 func (e *Engine) emitMessage(p map[string]any) {
-	e.emit("message.any", p)
+	id, _ := p["id"].(string)
+	e.emitID(id, "message.any", p)
 	if fm, _ := p["fromMe"].(bool); !fm {
-		e.emit("message", p)
+		e.emitID(id, "message", p)
 	}
 }
 
 func (e *Engine) emitAck(st waInStatus) {
-	typ := st.Status
-	switch st.Status {
-	case "delivered":
-		typ = "delivered"
-	case "read":
-		typ = "read"
-	case "sent":
-		typ = "sent"
-	case "failed":
-		typ = "failed"
-	}
-	e.emit("message.ack", map[string]any{
+	e.emitID(st.ID+":"+st.Status, "message.ack", map[string]any{
 		"ids":       []string{st.ID},
-		"type":      typ,
+		"type":      st.Status, // sent|delivered|read|failed
 		"chatId":    st.RecipientID + "@s.whatsapp.net",
 		"timestamp": atoiTs(st.Timestamp),
 	})

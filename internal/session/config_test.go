@@ -41,13 +41,13 @@ func TestParseConfig(t *testing.T) {
 	})
 }
 
-func TestMapWebhookSecrets(t *testing.T) {
+func TestMapSecrets(t *testing.T) {
 	raw := []byte(`{"metadata":{"a":"b"},"webhooks":[
 		{"url":"https://x","events":["*"],"hmac":{"secret":"top"}},
 		{"url":"https://y","events":["*"]}
 	]}`)
 
-	up := MapWebhookSecrets(raw, func(s string) string { return "ENC(" + s + ")" })
+	up := MapSecrets(raw, func(s string) string { return "ENC(" + s + ")" })
 	c, err := ParseConfig(up)
 	if err != nil {
 		t.Fatal(err)
@@ -63,8 +63,16 @@ func TestMapWebhookSecrets(t *testing.T) {
 	}
 
 	// sem secret pra mexer -> devolve o mesmo slice
-	noop := MapWebhookSecrets([]byte(`{"webhooks":[{"url":"z","events":["*"]}]}`), func(s string) string { return "x" })
+	noop := MapSecrets([]byte(`{"webhooks":[{"url":"z","events":["*"]}]}`), func(s string) string { return "x" })
 	if string(noop) != `{"webhooks":[{"url":"z","events":["*"]}]}` {
 		t.Fatalf("deveria ser no-op: %s", noop)
+	}
+
+	// cobre os tokens da Cloud API
+	cl := MapSecrets([]byte(`{"cloud":{"phoneNumberId":"P","accessToken":"tok","appSecret":"sec"}}`),
+		func(s string) string { return "E:" + s })
+	cc, _ := ParseConfig(cl)
+	if cc.Cloud.AccessToken != "E:tok" || cc.Cloud.AppSecret != "E:sec" || cc.Cloud.PhoneNumberID != "P" {
+		t.Fatalf("cloud não cifrou certo: %+v", cc.Cloud)
 	}
 }

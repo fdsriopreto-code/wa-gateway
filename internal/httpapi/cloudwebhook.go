@@ -60,8 +60,9 @@ func (d Deps) cloudWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// responde 200 imediatamente; o processamento (incl. download de mídia)
-	// é assíncrono dentro do Ingest.
+	// Ingest é síncrono e rápido: parseia e emite os eventos (duráveis pelo
+	// Redis Stream) antes de devolver 200. O download de mídia vai pra um
+	// pool interno, não bloqueia a resposta.
+	ci.Ingest(body)
 	w.WriteHeader(http.StatusOK)
-	go ci.Ingest(body)
 }
