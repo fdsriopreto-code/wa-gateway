@@ -152,6 +152,14 @@ Atualizado em **2026-08-30**.
   Pra SaaS que gera/guarda/confere o código no próprio banco e só quer o
   gateway como cano + confirmação de entrega. Não vale pra `enqueue:true`.
   Testes com miniredis + httptest.
+- **Console: assistente de nova sessão + responsivo** — criar sessão virou um
+  wizard de 3 passos (tipo → conectar/QR ao vivo dentro do modal → webhook
+  opcional), no lugar do form + modal de config abrindo junto. Pass geral de
+  responsividade mobile: `100dvh` no lugar de `100vh`, sidebar/drawer rolável
+  (o toggle de tema não corta mais), botão de tema também no topbar, grids em
+  coluna única < 560px, QR/imagens com `max-width:100%`, tabs e barras que
+  rolam em vez de cortar, toasts full-width no mobile, `env(safe-area-inset)`.
+  Blocos de curl/JSON viraram `<details>` recolhíveis ("ver comando").
 - CI completo + release automático do node n8n por tag.
 
 ---

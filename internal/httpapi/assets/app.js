@@ -123,7 +123,7 @@ let modalEscHandler=null;
 function modal(title, sub, node, opts={}){
   if(modalEscHandler){removeEventListener("keydown",modalEscHandler);modalEscHandler=null;}
   const root=$("#modal-root"), close=()=>{clear(root);if(modalEscHandler){removeEventListener("keydown",modalEscHandler);modalEscHandler=null;}};
-  const box=h("div",{class:"modal",style:opts.wide?"width:min(620px,95vw)":""},
+  const box=h("div",{class:"modal",style:opts.wide?"width:min(620px,100%)":""},
     h("div",{class:"between",style:"margin-bottom:5px"},
       h("h3",{},title),
       h("button",{class:"btn icon ghost sm",onclick:close},ic("x","sm"))),
@@ -163,6 +163,13 @@ function jsonOut(data, extra){
   const pre=h("pre",{class:"out"});
   pre.innerHTML=typeof data==="string"?esc(data):hl(data);
   return h("div",{}, h("div",{class:"out-bar"}, extra||null, copyBtn("copiar",raw)), pre);
+}
+// bloco de código recolhível — mantém as páginas limpas ("ver comando")
+function foldCode(label, pretty, raw){
+  return h("details",{class:"fold"},
+    h("summary",{}, label||"ver comando"),
+    h("div",{class:"out-bar",style:"margin-top:8px"}, copyBtn("copiar", raw||pretty)),
+    h("pre",{class:"out"}, pretty));
 }
 const spinner=()=>h("span",{class:"spinner"});
 const loadingBox=()=>h("div",{class:"loading"},spinner());
@@ -462,11 +469,18 @@ views.quickstart={title:"Início rápido",async render(root){
       connected?`Conectado: ${s0.name} · ${num}`:"Abra a sessão, escaneie o QR no WhatsApp → Aparelhos conectados.",
       !connected&&sessions.length?h("a",{class:"btn ghost sm",href:"#/sessions"},"Ver QR"):null),
     step(4,false,"Envie a primeira mensagem",
-      "Troque o número pelo destino real. O chatId é o número + @s.whatsapp.net.",
-      h("div",{class:"out-bar"},copyBtn("copiar",`curl -X POST '${LS.base}/api/sendText' -H 'X-Api-Key: ${key}' -H 'Content-Type: application/json' -d '{"session":"${s0?s0.name:"default"}","chatId":"${num}@s.whatsapp.net","text":"funcionou!"}'`)),
-      h("pre",{class:"out"},`curl -X POST '${LS.base}/api/sendText' \\\n  -H 'X-Api-Key: ${key}' -H 'Content-Type: application/json' \\\n  -d '{"session":"${s0?s0.name:"default"}","chatId":"${num}@s.whatsapp.net","text":"funcionou!"}'`),
-      h("div",{style:"margin-top:8px"},h("a",{class:"btn ghost sm",href:"#/playground"},"abrir no Playground"),
-        h("a",{class:"btn ghost sm",href:"#/chat",style:"margin-left:6px"},"testar no Chat"))),
+      connected?`Manda um "funcionou!" pra você mesmo (${num}) e confere no celular.`:"Conecte uma sessão primeiro. Depois é 1 clique ou 1 curl.",
+      h("div",{class:"btn-row",style:"margin-bottom:10px"},
+        connected?h("button",{class:"btn sm",onclick:async e=>{
+          e.currentTarget.disabled=true;
+          try{await apiData("POST","/api/sendText",{session:s0.name,chatId:num+"@s.whatsapp.net",text:"funcionou! 🎉"});ok("enviado — olha o WhatsApp");}
+          catch(err){fail(err);}finally{e.currentTarget.disabled=false;}
+        }},ic("send","sm"),"Enviar teste pra mim"):null,
+        h("a",{class:"btn ghost sm",href:"#/chat"},"testar no Chat"),
+        h("a",{class:"btn ghost sm",href:"#/playground"},"Playground")),
+      foldCode("ver o comando curl",
+        `curl -X POST '${LS.base}/api/sendText' \\\n  -H 'X-Api-Key: ${key}' -H 'Content-Type: application/json' \\\n  -d '{"session":"${s0?s0.name:"default"}","chatId":"${num}@s.whatsapp.net","text":"funcionou!"}'`,
+        `curl -X POST '${LS.base}/api/sendText' -H 'X-Api-Key: ${key}' -H 'Content-Type: application/json' -d '{"session":"${s0?s0.name:"default"}","chatId":"${num}@s.whatsapp.net","text":"funcionou!"}'`)),
   ));
 
   page.append(h("div",{class:"sec-title"},ic("link","sm"),"Receber mensagens (webhook / n8n)"),
@@ -476,9 +490,10 @@ views.quickstart={title:"Início rápido",async render(root){
       h("p",{class:"muted",style:"font-size:12.5px;margin-bottom:10px"},
         "2) ",h("b",{},"Ative o workflow")," (toggle no topo) — sem isso o n8n usa uma URL de teste temporária e a mensagem real não chega."),
       h("p",{class:"muted",style:"font-size:12.5px;margin-bottom:10px"},
-        "3) Ou registre manual na config da sessão:"),
-      h("div",{class:"out-bar"},copyBtn("copiar",`{"webhooks":[{"url":"https://SEU-N8N/webhook/xxxx","events":["message"],"hmac":{"secret":"um-segredo"}}]}`)),
-      h("pre",{class:"out"},`{\n  "webhooks": [\n    { "url": "https://SEU-N8N/webhook/xxxx",\n      "events": ["message"],\n      "hmac": { "secret": "um-segredo" } }\n  ]\n}`),
+        "3) Ou pelo assistente: ",h("b",{},"Sessões → Nova sessão")," tem um passo de webhook. Manual (JSON da config):"),
+      foldCode("ver o JSON",
+        `{\n  "webhooks": [\n    { "url": "https://SEU-N8N/webhook/xxxx",\n      "events": ["message"],\n      "hmac": { "secret": "um-segredo" } }\n  ]\n}`,
+        `{"webhooks":[{"url":"https://SEU-N8N/webhook/xxxx","events":["message"],"hmac":{"secret":"um-segredo"}}]}`),
       s0?h("button",{class:"btn ghost sm",style:"margin-top:10px",onclick:async()=>{
         try{const r=await apiData("POST",`/api/sessions/${encodeURIComponent(s0.name)}/webhook/test`,{});ok("teste disparado");
           modal("Teste de webhook",null,jsonOut(r));}catch(e){fail(e);}
@@ -683,53 +698,194 @@ views.sessions={title:"Sessões",async render(root){
   poll=setInterval(refresh,2500);
   addEventListener("hashchange",()=>clearInterval(poll),{once:true});
 
-  // --- Nova sessão (com escolha de motor) ---
-  const engSel=h("select",{id:"s-eng"},
-    h("option",{value:"wa-gateway"},"wa-gateway — conectar por QR / número (whatsmeow)"),
-    h("option",{value:"cloud"},"WhatsApp Cloud API — oficial da Meta (botões, listas, templates)"));
-  const cloudBox=h("div",{class:"card pad",style:"margin-top:10px;display:none;background:var(--s1)"},
-    h("p",{class:"hint",style:"margin:0 0 8px"},"Credenciais do WhatsApp Business / Cloud API (Meta for Developers → seu app → WhatsApp)."),
-    h("div",{class:"frow"},
-      h("div",{class:"field"},h("label",{},"Phone Number ID *"),h("input",{id:"c-pnid",placeholder:"123456789012345"})),
-      h("div",{class:"field"},h("label",{},"WABA ID"),h("input",{id:"c-waba",placeholder:"987654321098765"}))),
-    h("div",{class:"field"},h("label",{},"Access Token *"),h("input",{id:"c-tok",placeholder:"EAAG… (permanente, de System User)"})),
-    h("div",{class:"frow"},
-      h("div",{class:"field"},h("label",{},"Verify Token"),h("input",{id:"c-verify",placeholder:"um segredo que você inventa"})),
-      h("div",{class:"field"},h("label",{},"App Secret"),h("input",{id:"c-secret",placeholder:"valida a assinatura do webhook"}))));
-  engSel.addEventListener("change",()=>{cloudBox.style.display=engSel.value==="cloud"?"block":"none";});
+  // --- Nova sessão: abre o assistente passo a passo ---
+  page.append(h("div",{class:"btn-row",style:"margin-top:24px"},
+    h("button",{class:"btn",onclick:()=>newSessionWizard(()=>route())},ic("plus","sm"),"Nova sessão")));
+}};
 
-  page.append(
-    h("div",{class:"sec-title"},ic("plus","sm"),"Nova sessão"),
-    h("div",{class:"card pad"},
-      h("div",{class:"frow"},
-        h("div",{class:"field"},h("label",{},"nome"),h("input",{id:"s-name",placeholder:"default"})),
-        h("div",{class:"field"},h("label",{},"motor"),engSel),
-        h("div",{class:"field narrow"},h("label",{}," "),h("label",{class:"check"},h("input",{type:"checkbox",id:"s-start",checked:true}),"iniciar já"))),
-      cloudBox,
-      h("div",{class:"btn-row",style:"margin-top:10px"},h("button",{class:"btn",onclick:async e=>{
-        const name=$("#s-name").value.trim(); if(!name)return fail("nome obrigatório");
-        const body={name,start:$("#s-start").checked};
-        if(engSel.value==="cloud"){
-          const pnid=$("#c-pnid").value.trim(), tok=$("#c-tok").value.trim();
-          if(!pnid||!tok)return fail("Phone Number ID e Access Token são obrigatórios");
-          body.config={cloud:{
-            phoneNumberId:pnid, accessToken:tok,
-            wabaId:$("#c-waba").value.trim()||undefined,
-            verifyToken:$("#c-verify").value.trim()||undefined,
-            appSecret:$("#c-secret").value.trim()||undefined,
-          }};
+/* ── Assistente de nova sessão (tipo typeform): 1 escolher · 2 conectar · 3 webhook ── */
+function newSessionWizard(onDone){
+  const used=new Set((SESSIONS||[]).map(s=>s.name));
+  let n=1; while(used.has("sessao-"+n)) n++;
+  const state={engine:"wa-gateway",name:"sessao-"+n,cloud:{},createdName:""};
+  let step=1, poll=null;
+
+  const body=h("div",{});
+  const m=modal("Nova sessão",null,body,{wide:true,noFocus:true});
+  const stopPoll=()=>{if(poll){clearInterval(poll);poll=null;}};
+  const realClose=m.close; m.close=()=>{stopPoll();realClose();};
+
+  const steps=h("div",{class:"wiz-steps"});
+  const paintSteps=()=>{clear(steps);["Tipo","Conectar","Webhook"].forEach((lb,i)=>{
+    const k=i+1;
+    steps.append(h("span",{class:"wiz-dot"+(k===step?" on":k<step?" done":"")},k<step?"✓":k),
+      h("span",{class:"wiz-lb"+(k===step?" on":"")},lb),
+      i<2?h("span",{class:"wiz-bar"+(k<step?" done":"")}):null);
+  });};
+
+  const foot=h("div",{class:"btn-row",style:"margin-top:20px;justify-content:flex-end"});
+  const render=()=>{
+    clear(body); paintSteps(); body.append(steps);
+    const pane=h("div",{class:"wiz-pane"}); body.append(pane, foot); clear(foot);
+    (step===1?stepType:step===2?stepConnect:stepWebhook)(pane);
+  };
+
+  /* passo 1 — tipo + nome */
+  function stepType(pane){
+    const syncType=()=>{
+      const nm=$("#wz-name"); if(nm)state.name=nm.value;
+      if($("#wz-pnid"))state.cloud={
+        phoneNumberId:$("#wz-pnid").value.trim(), accessToken:$("#wz-tok").value.trim(),
+        wabaId:$("#wz-waba").value.trim(), verifyToken:$("#wz-verify").value.trim(), appSecret:$("#wz-secret").value.trim(),
+      };
+    };
+    const pick=(eng)=>{syncType();state.engine=eng;render();};
+    const opt=(eng,title,desc)=>h("button",{class:"opt-card"+(state.engine===eng?" sel":""),onclick:()=>pick(eng)},
+      h("div",{class:"oc-check"},state.engine===eng?ic("check","sm"):null),
+      h("div",{},h("div",{class:"oc-t"},title),h("div",{class:"oc-d"},desc)));
+    pane.append(
+      h("div",{class:"opt-grid"},
+        opt("wa-gateway","WhatsApp normal","Conecta lendo o QR code (ou por código). É o mais comum."),
+        opt("cloud","WhatsApp Cloud API","Número oficial da Meta. Precisa das credenciais do app.")),
+      h("div",{class:"field",style:"margin-top:16px"},h("label",{},"Nome da sessão"),
+        h("input",{id:"wz-name",value:state.name,placeholder:"ex.: vendas"}),
+        h("span",{class:"hint"},"Só um apelido interno. Pode deixar o sugerido.")),
+    );
+    if(state.engine==="cloud"){
+      pane.append(h("div",{class:"card pad",style:"margin-top:6px;background:var(--s1)"},
+        h("p",{class:"hint",style:"margin:0 0 10px"},"Meta for Developers → seu app → WhatsApp → API Setup."),
+        h("div",{class:"frow"},
+          field("wz-pnid","Phone Number ID *","123456789012345",state.cloud.phoneNumberId),
+          field("wz-waba","WABA ID","987654321098765",state.cloud.wabaId)),
+        field("wz-tok","Access Token *","EAAG… (permanente)",state.cloud.accessToken),
+        h("div",{class:"frow"},
+          field("wz-verify","Verify Token","um segredo que você inventa",state.cloud.verifyToken),
+          field("wz-secret","App Secret","valida a assinatura do webhook",state.cloud.appSecret))));
+    }
+    foot.append(h("button",{class:"btn",onclick:()=>{
+      state.name=$("#wz-name").value.trim();
+      if(!state.name)return fail("dê um nome pra sessão");
+      if(state.engine==="cloud"){
+        state.cloud={
+          phoneNumberId:$("#wz-pnid").value.trim(), accessToken:$("#wz-tok").value.trim(),
+          wabaId:$("#wz-waba").value.trim()||undefined, verifyToken:$("#wz-verify").value.trim()||undefined,
+          appSecret:$("#wz-secret").value.trim()||undefined,
+        };
+        if(!state.cloud.phoneNumberId||!state.cloud.accessToken)return fail("Phone Number ID e Access Token são obrigatórios");
+      }
+      step=2; render();
+    }},"Continuar",ic("chev","sm")));
+  }
+
+  /* passo 2 — cria a sessão e mostra QR (ou webhook da Meta) */
+  async function stepConnect(pane){
+    const status=h("div",{class:"wiz-status"},h("span",{class:"spinner"}),"criando sessão…");
+    pane.append(status);
+    const next=h("button",{class:"btn",disabled:true,onclick:()=>{step=3;render();}},"Continuar",ic("chev","sm"));
+    foot.append(h("button",{class:"btn ghost",onclick:()=>{stopPoll();step=1;render();}},"Voltar"),next);
+
+    if(state.createdName!==state.name){
+      const b={name:state.name,start:true};
+      if(state.engine==="cloud")b.config={cloud:state.cloud};
+      try{ await apiData("POST","/api/sessions",b); state.createdName=state.name; LS.sess=state.name; }
+      catch(e){ clear(status); status.append(h("span",{class:"pill bad"},"erro"),"  "+e.message); return; }
+    }
+
+    if(state.engine==="cloud"){
+      const hook=`${LS.base}/api/${encodeURIComponent(state.name)}/cloud/webhook`;
+      clear(status); next.disabled=false;
+      pane.append(
+        h("p",{class:"muted",style:"font-size:12.5px;margin-bottom:12px"},"No painel da Meta → WhatsApp → Configuration → Webhook, cole:"),
+        h("div",{class:"field"},h("label",{},"Callback URL"),
+          h("div",{class:"out-bar"},h("code",{class:"mono wrap"},hook),copyBtn("copiar",hook))),
+        h("div",{class:"field"},h("label",{},"Verify Token"),
+          h("div",{class:"out-bar"},h("code",{class:"mono"},state.cloud.verifyToken||"(defina em Configurar)"),
+            state.cloud.verifyToken?copyBtn("copiar",state.cloud.verifyToken):null)),
+        h("p",{class:"hint"},"Assine o campo ",h("b",{},"messages"),". A verificação a Meta faz sozinha."));
+      return;
+    }
+
+    // whatsmeow: QR ao vivo dentro do modal
+    const qrWrap=h("div",{class:"qr wait"},"gerando QR…");
+    const hintEl=h("p",{class:"muted",style:"text-align:center;font-size:11.5px;margin-top:8px"},"WhatsApp → Aparelhos conectados → Conectar um aparelho");
+    const pairBtn=h("button",{class:"btn subtle sm",style:"margin:8px auto 0;display:flex",onclick:async()=>{
+      const phone=prompt("Parear por código — número (só dígitos, com DDI):",""); if(!phone)return;
+      try{const r=await apiData("POST",`/api/sessions/${encodeURIComponent(state.name)}/auth/pair-code`,{phone:phone.replace(/\D/g,"")});
+        qrWrap.className="qr wait"; clear(qrWrap);
+        qrWrap.append(h("div",{style:"font:800 26px/1.3 var(--mono);letter-spacing:.16em;color:#111"},r.code));
+        hintEl.textContent="No celular: Aparelhos conectados → Conectar → Conectar com número";
+      }catch(e){fail(e);}
+    }},ic("cmd","sm"),"Parear por código");
+    clear(status);
+    pane.append(qrWrap,hintEl,pairBtn);
+
+    let lastCode="";
+    const tick=async()=>{
+      if(!$("#modal-root").contains(body)){stopPoll();return;} // modal fechado
+      try{
+        const rec=await apiData("GET","/api/sessions/"+encodeURIComponent(state.name));
+        if(rec.status==="WORKING"){
+          stopPoll(); next.disabled=false;
+          qrWrap.className="qr"; clear(qrWrap);
+          qrWrap.append(h("div",{style:"text-align:center;color:#0b7a37"},
+            h("div",{style:"font-size:30px"},"✓"),h("div",{style:"font-weight:700;margin-top:4px"},"Conectado!")));
+          hintEl.textContent=""; pairBtn.style.display="none";
+          ok(state.name+" conectada ✓");
+          return;
         }
+        if(rec.status==="SCAN_QR_CODE"){
+          const q=await apiData("GET","/api/"+encodeURIComponent(state.name)+"/auth/qr").catch(()=>null);
+          if(q&&q.code&&q.code!==lastCode){
+            lastCode=q.code;
+            qrWrap.className="qr";
+            clear(qrWrap);
+            qrWrap.append(h("img",{alt:"QR",src:`${LS.base}/api/${encodeURIComponent(state.name)}/auth/qr.png?api_key=${encodeURIComponent(LS.key)}&c=${encodeURIComponent(q.code.slice(0,12))}`,onerror(){this.style.visibility="hidden";}}));
+          }
+        }
+      }catch{}
+    };
+    tick(); poll=setInterval(tick,2500);
+  }
+
+  /* passo 3 — webhook (opcional) */
+  function stepWebhook(pane){
+    stopPoll();
+    const url=h("input",{id:"wz-hook",placeholder:"https://SEU-N8N/webhook/xxxx"});
+    const sec=h("input",{id:"wz-sec",placeholder:"opcional — segredo p/ assinar (HMAC)"});
+    const EV=[["message","Mensagens recebidas"],["message.ack","Recibos (entregue/lida)"],["session.status","Conexão mudou"],["session.unhealthy","Sessão caiu"]];
+    const boxes=EV.map(([v,lb])=>{const c=h("input",{type:"checkbox",checked:v==="message"||undefined,value:v});return h("label",{class:"check"},c,lb);});
+    pane.append(
+      h("p",{class:"muted",style:"font-size:12.5px;margin-bottom:12px"},"Pra receber as mensagens no n8n / seu backend. Pode pular e configurar depois no ",h("b",{},"Configurar"),"."),
+      h("div",{class:"field"},h("label",{},"URL do webhook"),url),
+      h("div",{class:"field"},h("label",{},"Eventos"),h("div",{style:"display:flex;flex-direction:column;gap:7px;margin-top:2px"},boxes)),
+      h("div",{class:"field"},h("label",{},"Segredo HMAC"),sec),
+    );
+    const finish=()=>{m.close();ok("sessão pronta");onDone&&onDone();};
+    foot.append(
+      h("button",{class:"btn ghost",onclick:finish},"Pular"),
+      h("button",{class:"btn",onclick:async e=>{
+        const u=url.value.trim(); if(!u)return finish();
+        const events=boxes.map(l=>l.querySelector("input")).filter(c=>c.checked).map(c=>c.value);
+        const wh={url:u,events:events.length?events:["message"]};
+        if(sec.value.trim())wh.hmac={secret:sec.value.trim()};
         e.target.disabled=true;
         try{
-          const rec=await apiData("POST","/api/sessions",body); ok("criada"); LS.sess=name;
-          if(engSel.value==="cloud") cloudSetupModal(name,body.config.cloud);
-          else cfgModal(rec);
-          route();
+          const rec=await apiData("GET","/api/sessions/"+encodeURIComponent(state.name));
+          let cfg={}; try{cfg=typeof rec.config==="string"?JSON.parse(rec.config||"{}"):(rec.config||{});}catch{}
+          cfg.webhooks=[...(Array.isArray(cfg.webhooks)?cfg.webhooks:[]),wh];
+          await apiData("PUT","/api/sessions/"+encodeURIComponent(state.name),{config:cfg});
+          finish();
         }catch(err){fail(err);e.target.disabled=false;}
-      }},ic("plus","sm"),"Criar sessão")),
-      h("p",{class:"hint",style:"margin-top:8px"},"wa-gateway: escaneie o QR no card. Cloud API: registre o webhook na Meta (o passo aparece ao criar).")),
-  );
-}};
+      }},ic("check","sm"),"Salvar e concluir"));
+  }
+
+  function field(id,label,ph,val){
+    return h("div",{class:"field"},h("label",{},label),h("input",{id,placeholder:ph,value:val||""}));
+  }
+
+  render();
+  return m;
+}
 
 // Passo pós-criação de sessão Cloud API: mostra a URL de webhook pra colar na Meta.
 function cloudSetupModal(name,cloud){
@@ -1560,7 +1716,8 @@ function renderFoot(){
   );
 }
 function applyTheme(){document.documentElement.setAttribute("data-theme",LS.theme);}
-function toggleTheme(){LS.theme=LS.theme==="dark"?"light":"dark";applyTheme();renderFoot();route();}
+function syncThemeTop(){const b=$("#theme-top");if(b){clear(b);b.append(ic(LS.theme==="dark"?"sun":"moon","sm"));}}
+function toggleTheme(){LS.theme=LS.theme==="dark"?"light":"dark";applyTheme();renderFoot();syncThemeTop();route();}
 function closeMenu(){$("#sidebar").classList.remove("open");$("#scrim")?.classList.remove("on");}
 
 let _healthy=null;
@@ -1618,5 +1775,12 @@ addEventListener("keydown",e=>{
   if(e.key==="/"&&!typing){const s=$("#view input[placeholder^='filtrar']");if(s){e.preventDefault();s.focus();}}
 });
 $("#kbd-hint")?.addEventListener("click",openPalette);
+
+// botão de tema no topbar — sempre visível (principalmente no mobile)
+(function(){
+  const b=h("button",{id:"theme-top",class:"btn ghost icon sm",title:"Trocar tema (claro/escuro)",onclick:toggleTheme});
+  b.append(ic(LS.theme==="dark"?"sun":"moon","sm"));
+  $(".topbar .right")?.prepend(b);
+})();
 
 applyTheme();renderFoot();route();health();setInterval(health,15000);
