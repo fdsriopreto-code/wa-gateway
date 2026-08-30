@@ -27,6 +27,9 @@ func (r *OutboxRecorder) Sent(ctx context.Context, id string, attempt int, messa
 		 SET status='sent', attempts=$2, message_id=NULLIF($3,''), sent_at=now(), last_error=NULL
 		 WHERE id=$1`,
 		id, attempt, messageID)
+	if cid, n, ok := ParseCampaignJobID(id); ok {
+		r.s.campaignTargetSent(ctx, cid, n, messageID)
+	}
 	return err
 }
 
@@ -34,6 +37,9 @@ func (r *OutboxRecorder) Failed(ctx context.Context, id string, attempt int, err
 	_, err := r.s.Pool.Exec(ctx,
 		`UPDATE outbox_jobs SET status='failed', attempts=$2, last_error=$3 WHERE id=$1`,
 		id, attempt, errMsg)
+	if cid, n, ok := ParseCampaignJobID(id); ok {
+		r.s.campaignTargetFailed(ctx, cid, n, errMsg)
+	}
 	return err
 }
 

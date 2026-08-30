@@ -22,11 +22,16 @@ type Worker struct {
 	resolver EngineResolver
 	rec      Recorder
 	log      *slog.Logger
+	gate     func(context.Context, Job) error
 }
 
 func NewWorker(r EngineResolver, rec Recorder, log *slog.Logger) *Worker {
 	return &Worker{resolver: r, rec: rec, log: log}
 }
+
+// SetGate registra um veto opcional: se devolver erro, o job é descartado sem
+// envio (usado p/ barrar jobs de campanha parada). nil = sem veto.
+func (w *Worker) SetGate(fn func(context.Context, Job) error) { w.gate = fn }
 
 // errSessionInactive faz o asynq re-tentar: a sessao pode estar reconectando.
 var errSessionInactive = errors.New("sessao inativa neste no")
@@ -39,6 +44,16 @@ func (w *Worker) Handler() asynq.HandlerFunc {
 		}
 		attempt, _ := asynq.GetRetryCount(ctx)
 		attempt++
+
+		if w.gate != nil {
+			if gErr := w.gate(ctx, j); gErr != nil {
+				w.log.Info("outbox: job vetado, descartando", "job", j.ID, "motivo", gErr)
+				if w.rec != nil {
+					_ = w.rec.Failed(ctx, j.ID, attempt, gErr.Error())
+				}
+				return errors.Join(asynq.SkipRetry, gErr)
+			}
+		}
 
 		eng, ok := w.resolver.Engine(j.Session)
 		if !ok {

@@ -86,6 +86,14 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		r.Post("/api/{session}/labels/message", d.labelMessage)
 
 		// --- dashboard / auditoria ---
+		// --- campanhas (envio em massa) ---
+		r.Post("/api/{session}/campaign", d.createCampaign)
+		r.Route("/api/campaigns", func(r chi.Router) {
+			r.Get("/", d.listCampaigns)
+			r.Get("/{id}", d.getCampaign)
+			r.Post("/{id}/stop", d.stopCampaign)
+		})
+
 		r.Get("/api/stats", d.stats)
 		r.Get("/api/cluster", d.cluster)
 		r.Get("/api/deliveries", d.listDeliveries)

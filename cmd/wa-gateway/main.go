@@ -18,6 +18,7 @@ import (
 
 	"wa-gateway/internal/auth"
 	"wa-gateway/internal/cache"
+	"wa-gateway/internal/campaign"
 	"wa-gateway/internal/config"
 	_ "wa-gateway/internal/engine/cloud"     // registra o motor Cloud API
 	_ "wa-gateway/internal/engine/whatsmeow" // registra o motor whatsmeow
@@ -168,6 +169,19 @@ func run() error {
 	}}, st.OutboxRecorder())
 	outWorker := outbox.NewWorker(mgr, st.OutboxRecorder(), log)
 
+	// ---- campanhas (envio em massa sobre a fila de saída) ----
+	campaigns := campaign.NewRunner(st, outQueue, rc, log, cfg.NodeID)
+	outWorker.SetGate(func(ctx context.Context, j outbox.Job) error {
+		cid, _, ok := store.ParseCampaignJobID(j.ID)
+		if !ok {
+			return nil
+		}
+		if st.CampaignStatus(ctx, cid) == "stopped" {
+			return errors.New("campanha parada")
+		}
+		return nil
+	})
+
 	asynqSrv := asynq.NewServer(redisOpt, asynq.Config{
 		Concurrency: 20,
 		Queues:      map[string]int{"webhook": 10, "outbox": 5, "default": 1},
@@ -192,6 +206,7 @@ func run() error {
 		log.Info("persistencia de mensagens: on")
 	}
 	go mgr.RestoreOwned(ctx)
+	go campaigns.Resume(ctx) // retoma campanhas que ficaram "running"
 
 	// ---- HTTP ----
 	authn := auth.New(cfg.APIKey, func(ctx context.Context, keyID string) (string, []string, error) {
@@ -214,6 +229,7 @@ func run() error {
 		Store:       st,
 		Hub:         hub,
 		Queue:       outQueue,
+		Campaigns:   campaigns,
 		Dispatcher:  dispatcher,
 		Media:       mediaStore,
 		Cache:       rc,

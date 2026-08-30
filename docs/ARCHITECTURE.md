@@ -78,7 +78,7 @@ pub/sub de WebSocket. **Um binário** — o console web é embutido via `//go:em
 | `internal/httpapi` | REST, `/mcp`, `/openapi.json`, `/docs`, console SPA | `httpapi.NewRouter` |
 | `internal/auth` | API key (chave-mestra + tabela `api_keys` com Argon2id) + middleware | `auth.New` |
 | `internal/observability` | logger slog, métricas Prometheus | `NewLogger`, `metrics.go` |
-| `migrations/` | SQL goose, embarcado com `//go:embed` | `0001…0007` |
+| `migrations/` | SQL goose, embarcado com `//go:embed` | `0001…0008` |
 
 ### 2.1 A interface `Engine`
 
@@ -190,6 +190,16 @@ sequenceDiagram
 - **`outbox.Dispatch`** mapeia `Kind` → método da engine. Kinds: `text`, `image`,
   `file`, `video`, `audio`, `sticker`, `location`, `contact`, `poll`, `forward`,
   `reaction`, `delete`, `edit`.
+- **Campanhas** (`internal/campaign`): `POST /api/{s}/campaign` grava
+  `campaigns` + `campaign_targets` (migração 0008) e o `campaign.Runner`
+  enfileira **um job da outbox por alvo** (id `camp:<id>:<n>`) — o pacing, o
+  retry e o registro são os do envio avulso. O progresso é um agregado sobre
+  `campaign_targets`, alimentado pelo mesmo `OutboxRecorder` (que detecta o
+  prefixo `camp:`). `POST /api/campaigns/{id}/stop` seta `status='stopped'`;
+  o `Worker.gate` barra os jobs ainda não entregues. `Runner.Resume` (boot)
+  retoma campanhas `running`, re-enfileirando só os alvos `pending` (o
+  `TaskID` idempotente ignora os já enfileirados). Lock `wa:campaign:<id>`
+  garante 1 runner por campanha no cluster. `GET /api/campaigns[/{id}]`.
 
 ---
 

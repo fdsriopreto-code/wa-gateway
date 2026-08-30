@@ -105,6 +105,23 @@ Atualizado em **2026-08-30**.
   forSeconds}`); ao voltar a `WORKING`, `session.healthy`. `SCAN_QR_CODE`
   nunca alerta (aguarda ação). `GET /api/sessions[].health` (`healthy` /
   `waiting` / `unhealthy`) e banner vermelho no console. Testes com bus real.
+  Follow-up: sessão que "flapa" (WORKING↔FAILED a cada <limiar) zera o
+  `badSince` a cada volta e pode nunca alertar — trocar por razão de falha
+  numa janela.
+- **Campanhas / envio em massa** — `internal/campaign` + migração 0008
+  (`campaigns`, `campaign_targets`). `POST /api/{s}/campaign`
+  (`{name, kind, text|data, recipients[], minIntervalMs?, jitterMs?}`) grava
+  os alvos e o `Runner` enfileira **um job da outbox por alvo** → mesmo pacing
+  anti-ban, retry e registro do envio avulso. Progresso = agregado sobre
+  `campaign_targets` (o `OutboxRecorder` detecta o id `camp:<id>:<n>`).
+  `GET /api/campaigns[/{id}]`, `POST /api/campaigns/{id}/stop` (o gate do
+  worker barra o que ainda não saiu). Retomável no boot (`Runner.Resume`),
+  lock `wa:campaign:<id>` p/ 1 runner por campanha no cluster. Console:
+  aba **Campanhas** (lista + progresso + criar campanha de texto). Mídia de
+  campanha limitada a 5 MiB (o blob é replicado por alvo na fila).
+  Follow-ups: (a) sem templating por destinatário (`{{nome}}`); (b) falha
+  transitória marca o alvo `failed` antes do retry (cosmético até resolver);
+  (c) sem MCP tool ainda.
 - CI completo + release automático do node n8n por tag.
 
 ---

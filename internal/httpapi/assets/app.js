@@ -1269,6 +1269,94 @@ views.monitor={title:"Monitoramento",async render(root){
   drawTabs();load();
 }};
 
+views.campaigns={title:"Campanhas",async render(root){
+  const page=h("div",{class:"page"}); root.append(page);
+  page.append(h("div",{class:"page-head"},h("div",{},h("h2",{},"Campanhas"),
+    h("p",{},"Envio em massa. Cada destinatário passa pela fila de saída (mesmo pacing anti-ban dos envios avulsos)."))));
+  await loadSessions();
+  const body=h("div",{}); page.append(body); body.append(skeleton("row",3));
+
+  const prog=(c)=>{
+    const k=c.counts||{}; const done=(k.sent||0)+(k.failed||0);
+    return h("span",{},h("span",{class:"mono"},`${done}/${c.total}`),
+      k.failed?h("span",{class:"muted"},`  · ${k.failed} falha(s)`):null);
+  };
+  const detail=async(id)=>{
+    try{
+      const r=await apiData("GET","/api/campaigns/"+encodeURIComponent(id));
+      const c=r.campaign, k=c.counts||{};
+      modal("Campanha "+(c.name||c.id),`${c.session} · ${c.kind} · ${c.status}`,
+        h("div",{},
+          h("div",{class:"frow"},
+            kv("total",c.total),kv("enviadas",k.sent||0),kv("falhas",k.failed||0),
+            kv("na fila",(k.queued||0)),kv("pendentes",(k.pending||0))),
+          (r.failed&&r.failed.length)?h("div",{},h("div",{class:"sec-title"},ic("alert","sm"),"Falhas (amostra)"),
+            table([{h:"nº",get:t=>t.n},{h:"chatId",get:t=>h("span",{class:"mono"},t.chatId)},
+              {h:"erro",get:t=>h("span",{class:"muted"},t.error||"—")}],r.failed,"—")):null));
+    }catch(e){fail(e);}
+  };
+
+  const refresh=async()=>{
+    let list;
+    try{list=await apiData("GET","/api/campaigns")||[];}
+    catch(e){clear(body);body.append(empty("send",e.message));return;}
+    clear(body);
+    body.append(table([
+      {h:"campanha",get:c=>h("span",{},c.name||h("span",{class:"mono"},c.id))},
+      {h:"sessão",get:c=>c.session},
+      {h:"tipo",get:c=>c.kind},
+      {h:"progresso",get:prog},
+      {h:"estado",get:c=>badge(c.status==="done"?"ok":c.status==="stopped"?"failed":"pending")},
+      {h:"criada",get:c=>h("span",{class:"muted"},fmtRel(c.createdAt))},
+      {h:"",get:c=>h("span",{class:"btn-row"},
+        h("button",{class:"btn ghost sm",onclick:()=>detail(c.id)},"detalhe"),
+        c.status==="running"?h("button",{class:"btn danger ghost sm",onclick:async()=>{
+          if(!confirm("parar a campanha?"))return;
+          try{await apiData("POST","/api/campaigns/"+encodeURIComponent(c.id)+"/stop");ok("parada");refresh();}catch(e){fail(e);}
+        }},"parar"):null)},
+    ],list,"nenhuma campanha ainda"),
+    h("div",{class:"sec-title"},ic("plus","sm"),"Nova campanha"),
+    newCampaignCard(refresh));
+  };
+  await refresh();
+  const poll=setInterval(refresh,4000);
+  addEventListener("hashchange",()=>clearInterval(poll),{once:true});
+
+  function newCampaignCard(done){
+    const sess=h("select",{},(SESSIONS||[]).map(s=>h("option",{value:s.name},s.name)));
+    const name=h("input",{placeholder:"promo de julho"});
+    const text=h("textarea",{rows:3,placeholder:"Mensagem de texto…"});
+    const rec=h("textarea",{rows:6,placeholder:"um número por linha\n5517999999999\n5517888888888"});
+    const mi=h("input",{type:"number",placeholder:"5000"});
+    const ji=h("input",{type:"number",placeholder:"3000"});
+    return h("div",{class:"card pad"},
+      h("div",{class:"frow"},
+        h("div",{class:"field"},h("label",{},"sessão"),sess),
+        h("div",{class:"field"},h("label",{},"nome"),name)),
+      h("div",{class:"field"},h("label",{},"texto da mensagem"),text),
+      h("div",{class:"field"},h("label",{},"destinatários (um por linha)"),rec),
+      h("div",{class:"frow"},
+        h("div",{class:"field"},h("label",{},"intervalo mín. (ms)"),mi),
+        h("div",{class:"field"},h("label",{},"jitter (ms)"),ji)),
+      h("p",{class:"hint",style:"margin-top:4px"},"Vazio nos tempos = usa o pacing global do servidor. Campanha de mídia: use a API (",h("code",{},"POST /api/{session}/campaign"),")."),
+      h("div",{class:"btn-row",style:"margin-top:10px"},h("button",{class:"btn",onclick:async e=>{
+        const recipients=rec.value.split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean);
+        if(!sess.value)return fail("escolha uma sessão");
+        if(!text.value.trim())return fail("escreva a mensagem");
+        if(!recipients.length)return fail("informe ao menos um destinatário");
+        e.target.disabled=true;
+        try{
+          const r=await apiData("POST","/api/"+encodeURIComponent(sess.value)+"/campaign",
+            {name:name.value,kind:"text",text:text.value,recipients,
+             minIntervalMs:+mi.value||0,jitterMs:+ji.value||0});
+          ok(`campanha criada — ${r.total} destinatário(s)`);
+          name.value=text.value=rec.value="";
+          done();
+        }catch(err){fail(err);}finally{e.target.disabled=false;}
+      }},ic("send","sm"),"Disparar campanha")));
+  }
+}};
+
 views.keys={title:"API keys",async render(root){
   const page=h("div",{class:"page"}); root.append(page);
   page.append(h("div",{class:"page-head"},h("div",{},h("h2",{},"API keys"),h("p",{},"Chaves da tabela api_keys. A master do .env não aparece aqui."))));
@@ -1387,7 +1475,7 @@ function openPalette(){
 /* ═══════════════════════════════════════════════ shell */
 const NAV=[
   ["Principal",[["quickstart","play","Início rápido"],["overview","overview","Visão geral"],["sessions","sessions","Sessões"],["chat","chat","Chat"],["playground","playground","Playground"]]],
-  ["Observar",[["events","events","Eventos ao vivo"],["monitor","monitor","Monitoramento"]]],
+  ["Observar",[["events","events","Eventos ao vivo"],["campaigns","send","Campanhas"],["monitor","monitor","Monitoramento"]]],
   ["Config",[["keys","keys","API keys"],["settings","settings","Conexão"]]],
 ];
 function renderNav(active){

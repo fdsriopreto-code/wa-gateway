@@ -100,6 +100,12 @@ var specEndpoints = []ep{
 	{"POST", "/api/{session}/media/purge", "Monitor", "Apagar TODAS as mídias da sessão (ou só olderThan)", map[string]any{"olderThan": "168h"}, nil},
 	{"GET", "/api/stats", "Monitor", "Estatísticas", nil, nil},
 
+	// ---- campanhas (envio em massa)
+	{"POST", "/api/{session}/campaign", "Campaigns", "Criar campanha (envio em massa pausado pelo pacing da fila)", map[string]any{"name": "promo julho", "kind": "text", "text": "Oi! Novidades...", "recipients": []string{"5517999999999", "5517888888888"}, "minIntervalMs": 5000, "jitterMs": 3000}, nil},
+	{"GET", "/api/campaigns", "Campaigns", "Listar campanhas", nil, []string{"session?", "limit?"}},
+	{"GET", "/api/campaigns/{id}", "Campaigns", "Detalhe da campanha (contagem por status + falhas)", nil, nil},
+	{"POST", "/api/campaigns/{id}/stop", "Campaigns", "Parar a campanha (barra os jobs ainda não enviados)", map[string]any{}, nil},
+
 	{"GET", "/api/cluster", "Admin", "Info do nó e nós vivos (multi-nó)", nil, nil},
 	{"POST", "/api/deliveries/{id}/retry", "Admin", "Reenfileira uma entrega de webhook", nil, nil},
 
@@ -182,6 +188,7 @@ func (d Deps) openapiDoc(scheme, host string) map[string]any {
 			map[string]any{"name": "Messaging"}, map[string]any{"name": "Contacts"},
 			map[string]any{"name": "Groups"}, map[string]any{"name": "History"},
 			map[string]any{"name": "Monitor"}, map[string]any{"name": "Keys"},
+			map[string]any{"name": "Campaigns", "description": "Envio em massa pausado pelo pacing anti-ban."},
 			map[string]any{"name": "MCP", "description": "Model Context Protocol — ferramentas p/ agentes de IA."},
 		},
 		"paths": paths,
