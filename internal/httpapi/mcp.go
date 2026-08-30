@@ -185,6 +185,106 @@ var mcpTools = []mcpTool{
 		},
 	},
 	{
+		name: "create_session", desc: "Cria uma sessão (dá o nome) e opcionalmente já inicia. Depois use session_qr ou pair_phone pra conectar o número.",
+		schema: obj([]string{"session"}, map[string]any{
+			"session":    pstr("nome único da sessão (ex.: vendas)"),
+			"webhookUrl": pstr("opcional: URL pra receber eventos"),
+			"events":     pstr("opcional: eventos do webhook, separados por vírgula (ex.: message,session.status). Default: *"),
+			"start":      pbool("iniciar já (default true)"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			name := s(a, "session")
+			if name == "" {
+				return nil, fmt.Errorf("informe 'session'")
+			}
+			var cfg json.RawMessage
+			if u := s(a, "webhookUrl"); u != "" {
+				evs := splitComma(s(a, "events"))
+				if len(evs) == 0 {
+					evs = []string{"*"}
+				}
+				cfg, _ = json.Marshal(map[string]any{
+					"webhooks": []map[string]any{{"url": u, "events": evs}},
+				})
+			}
+			rec, err := d.Manager.Upsert(ctx, name, cfg)
+			if err != nil {
+				return nil, err
+			}
+			start := true
+			if v, ok := a["start"].(bool); ok {
+				start = v
+			}
+			if start {
+				if err := d.Manager.Start(ctx, name); err != nil {
+					return nil, fmt.Errorf("criada, mas falhou ao iniciar: %w", err)
+				}
+				rec, _ = d.Manager.Get(ctx, name)
+			}
+			return rec, nil
+		},
+	},
+	{
+		name: "start_session", desc: "Inicia (ou reconecta) uma sessão já criada.",
+		schema: obj([]string{"session"}, map[string]any{"session": pstr("nome da sessão")}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			if err := d.Manager.Start(ctx, s(a, "session")); err != nil {
+				return nil, err
+			}
+			return d.Manager.Get(ctx, s(a, "session"))
+		},
+	},
+	{
+		name: "stop_session", desc: "Para uma sessão neste nó (sem deslogar o número).",
+		schema: obj([]string{"session"}, map[string]any{"session": pstr("nome da sessão")}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			_ = d.Manager.Stop(ctx, s(a, "session"), false)
+			return d.Manager.Get(ctx, s(a, "session"))
+		},
+	},
+	{
+		name: "delete_session", desc: "Apaga a sessão (para e remove o registro). Não desloga o device do WhatsApp.",
+		schema: obj([]string{"session"}, map[string]any{"session": pstr("nome da sessão")}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			if err := d.Manager.Delete(ctx, s(a, "session")); err != nil {
+				return nil, err
+			}
+			return map[string]any{"deleted": s(a, "session")}, nil
+		},
+	},
+	{
+		name: "session_qr", desc: "Devolve o código QR atual da sessão (texto) pra um humano escanear no WhatsApp → Aparelhos conectados. Só existe quando o status é SCAN_QR_CODE.",
+		schema: obj([]string{"session"}, map[string]any{"session": pstr("nome da sessão")}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			code := eng.QR()
+			if code == "" {
+				return map[string]any{"status": string(eng.Status()), "qr": nil, "hint": "sem QR agora; se já pareou, o status vira WORKING"}, nil
+			}
+			return map[string]any{"status": string(eng.Status()), "qr": code}, nil
+		},
+	},
+	{
+		name: "pair_phone", desc: "Gera um código de pareamento por número (alternativa ao QR). O humano digita o código em WhatsApp → Aparelhos conectados → Conectar com número.",
+		schema: obj([]string{"session", "phone"}, map[string]any{
+			"session": pstr("nome da sessão"), "phone": pstr("número em E.164, só dígitos (ex.: 5517999999999)"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			code, err := eng.PairPhone(ctx, s(a, "phone"))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"pairingCode": code}, nil
+		},
+	},
+	{
 		name: "send_text", desc: "Envia uma mensagem de texto. chatId no formato 5599999999999@s.whatsapp.net (ou ...@g.us para grupo).",
 		schema: obj([]string{"session", "chatId", "text"}, map[string]any{
 			"session": pstr("sessão"), "chatId": pstr("destino"), "text": pstr("texto"),

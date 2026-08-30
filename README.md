@@ -8,6 +8,15 @@ teardown de Evolution API e WAHA — ver `../repos-analise/blueprint-wa-api-go.h
 **Stack:** Go · [whatsmeow](https://github.com/tulir/whatsmeow) · PostgreSQL (fonte de verdade)
 · Redis (cache · fila · locks · pub/sub) · chi · asynq.
 
+## Documentação
+
+| Doc | Pra quê |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | mapa dos pacotes, ciclo de request/evento/sessão, multi-nó, config, como estender |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | o que já roda, o que falta, o que **não** vale a pena (com o porquê) |
+| [docs/MCP.md](docs/MCP.md) | servidor MCP: ligar num agente, do zero ao "oi" só por MCP, as 20 ferramentas |
+| `/docs` (no ar) | Swagger UI · `/openapi.json` é gerado de `internal/httpapi/spec.go` |
+
 ## Estado — Fase 1 (MVP)
 
 | Pronto | Item |
