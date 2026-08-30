@@ -57,6 +57,10 @@ type Manager struct {
 	enricher  *enrich.Client
 	enrichAll bool // MEDIA_ENRICH global; sessao sobrescreve com config.media.enrich
 
+	unhealthyAfter time.Duration // SESSION_UNHEALTHY_AFTER; 0 => 2m no MonitorHealth
+	healthMu       sync.RWMutex
+	health         map[string]*healthState
+
 	mu      sync.RWMutex
 	running map[string]*handle
 
@@ -73,6 +77,7 @@ func NewManager(st *store.Store, rc *cache.Redis, bus *events.Bus, log *slog.Log
 		store: st, cache: rc, bus: bus, log: log,
 		dsn: dsn, nodeID: nodeID, defaultEngine: defaultEngine, media: media,
 		running: make(map[string]*handle),
+		health:  make(map[string]*healthState),
 	}
 }
 

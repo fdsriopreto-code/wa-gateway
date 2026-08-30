@@ -27,6 +27,10 @@ type Config struct {
 	WebhookTimeout     time.Duration
 	WebhookMaxAttempts int
 
+	// SessionUnhealthyAfter: quanto tempo uma sessão viva pode ficar fora do
+	// estado WORKING antes de emitir session.unhealthy. 0 desliga o monitor.
+	SessionUnhealthyAfter time.Duration
+
 	// Pacing global da fila de saida (anti-ban). Sobrescrevivel por sessao
 	// via config.outbox.
 	OutboxMinInterval time.Duration
@@ -96,34 +100,36 @@ func Load() (Config, error) {
 		DefaultEngine:      env("DEFAULT_ENGINE", "wa-gateway"),
 		WebhookTimeout:     envDuration("WEBHOOK_TIMEOUT", 15*time.Second),
 		WebhookMaxAttempts: envInt("WEBHOOK_MAX_ATTEMPTS", 15),
-		OutboxMinInterval:  envDuration("OUTBOX_MIN_INTERVAL", 3*time.Second),
-		OutboxJitter:       envDuration("OUTBOX_JITTER", 2*time.Second),
-		OutboxDailyLimit:   envInt("OUTBOX_DAILY_LIMIT", 0),
-		MessageStore:       env("MESSAGE_STORE", "on") != "off",
-		MediaBackend:       env("MEDIA_BACKEND", "none"),
-		MediaTTL:           envDuration("MEDIA_TTL", 0),
-		MediaGCInterval:    envDuration("MEDIA_GC_INTERVAL", 5*time.Minute),
-		MediaEnrich:        envBool("MEDIA_ENRICH", false),
-		AIBaseURL:          env("AI_BASE_URL", "https://api.openai.com/v1"),
-		AIAPIKey:           env("AI_API_KEY", ""),
-		AITranscribeModel:  env("AI_TRANSCRIBE_MODEL", "whisper-1"),
-		AIVisionModel:      env("AI_VISION_MODEL", "gpt-4o-mini"),
-		S3Endpoint:         env("S3_ENDPOINT", ""),
-		S3Region:           env("S3_REGION", "us-east-1"),
-		S3Bucket:           env("S3_BUCKET", ""),
-		S3AccessKey:        env("S3_ACCESS_KEY", ""),
-		S3SecretKey:        env("S3_SECRET_KEY", ""),
-		S3UseSSL:           envBool("S3_USE_SSL", false),
-		S3PathStyle:        envBool("S3_PATH_STYLE", true),
-		S3PublicBaseURL:    env("S3_PUBLIC_BASE_URL", ""),
-		CORSOrigins:        splitCSV(env("CORS_ORIGINS", "")),
-		AccessLog:          envBool("ACCESS_LOG", false),
-		RateLimitRPS:       envInt("RATE_LIMIT_RPS", 20),
-		RateLimitBurst:     envInt("RATE_LIMIT_BURST", 0),
-		LogLevel:           env("LOG_LEVEL", "info"),
-		LogFormat:          env("LOG_FORMAT", "text"),
-		NodeID:             env("NODE_ID", ""),
-		NodeAdvertiseURL:   strings.TrimRight(env("NODE_ADVERTISE_URL", ""), "/"),
+
+		SessionUnhealthyAfter: envDuration("SESSION_UNHEALTHY_AFTER", 2*time.Minute),
+		OutboxMinInterval:     envDuration("OUTBOX_MIN_INTERVAL", 3*time.Second),
+		OutboxJitter:          envDuration("OUTBOX_JITTER", 2*time.Second),
+		OutboxDailyLimit:      envInt("OUTBOX_DAILY_LIMIT", 0),
+		MessageStore:          env("MESSAGE_STORE", "on") != "off",
+		MediaBackend:          env("MEDIA_BACKEND", "none"),
+		MediaTTL:              envDuration("MEDIA_TTL", 0),
+		MediaGCInterval:       envDuration("MEDIA_GC_INTERVAL", 5*time.Minute),
+		MediaEnrich:           envBool("MEDIA_ENRICH", false),
+		AIBaseURL:             env("AI_BASE_URL", "https://api.openai.com/v1"),
+		AIAPIKey:              env("AI_API_KEY", ""),
+		AITranscribeModel:     env("AI_TRANSCRIBE_MODEL", "whisper-1"),
+		AIVisionModel:         env("AI_VISION_MODEL", "gpt-4o-mini"),
+		S3Endpoint:            env("S3_ENDPOINT", ""),
+		S3Region:              env("S3_REGION", "us-east-1"),
+		S3Bucket:              env("S3_BUCKET", ""),
+		S3AccessKey:           env("S3_ACCESS_KEY", ""),
+		S3SecretKey:           env("S3_SECRET_KEY", ""),
+		S3UseSSL:              envBool("S3_USE_SSL", false),
+		S3PathStyle:           envBool("S3_PATH_STYLE", true),
+		S3PublicBaseURL:       env("S3_PUBLIC_BASE_URL", ""),
+		CORSOrigins:           splitCSV(env("CORS_ORIGINS", "")),
+		AccessLog:             envBool("ACCESS_LOG", false),
+		RateLimitRPS:          envInt("RATE_LIMIT_RPS", 20),
+		RateLimitBurst:        envInt("RATE_LIMIT_BURST", 0),
+		LogLevel:              env("LOG_LEVEL", "info"),
+		LogFormat:             env("LOG_FORMAT", "text"),
+		NodeID:                env("NODE_ID", ""),
+		NodeAdvertiseURL:      strings.TrimRight(env("NODE_ADVERTISE_URL", ""), "/"),
 	}
 
 	if c.DatabaseURL == "" {

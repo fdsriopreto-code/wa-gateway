@@ -305,6 +305,7 @@ Tudo por env var. Padrões entre `()`.
 | `SECRET_KEY` | 64 hex (32 bytes). Liga AES-256-GCM nos secrets de webhook em repouso. Vazio = texto puro. `openssl rand -hex 32` |
 | `DEFAULT_ENGINE` (`wa-gateway`) | engine das sessões novas |
 | `WEBHOOK_TIMEOUT` (`15s`) / `WEBHOOK_MAX_ATTEMPTS` (`15`) | entrega de webhook |
+| `SESSION_UNHEALTHY_AFTER` (`2m`) | sessão viva fora de `WORKING` por mais que isso → evento `session.unhealthy` (+ `session.healthy` ao recuperar). `0` desliga |
 | `OUTBOX_MIN_INTERVAL` (`3s`) / `OUTBOX_JITTER` (`2s`) / `OUTBOX_DAILY_LIMIT` (`0`=∞) | pacing global da fila de saída |
 | `MESSAGE_STORE` (`on`) | persistir mensagens/chats. `off` desliga o `inbox` |
 | `MEDIA_BACKEND` (`none` / `s3`) | ingestão de mídia |

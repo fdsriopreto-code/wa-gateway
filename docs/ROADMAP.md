@@ -90,6 +90,21 @@ Atualizado em **2026-08-30**.
   `MEDIA_GC_INTERVAL`. Manual: `DELETE /api/media/{id}`,
   `POST /api/{s}/media/purge`. Console: aba **Mídia** no cfgModal. Migração
   0007 (`media.expires_at`).
+- **Enriquecimento de mídia** — `MEDIA_ENRICH` + `AI_API_KEY` (API compatível
+  com OpenAI: OpenAI, Groq, Together…). Áudio/PTT recebido → `transcript`,
+  imagem → `imageCaption` no payload do evento; webhook, n8n e WS ganham o
+  texto sem download. Pacote `internal/enrich`; callback `engine.Deps.Enrich`
+  injetado nas duas engines, roda no worker pool de mídia. Por sessão:
+  `config.media.enrich` (*bool*). Console: seletor na aba **Mídia**.
+  Follow-ups: (a) se `AI_API_KEY` setado mas `enrich:false` na sessão, a mídia
+  ainda é baixada (descartada depois) — só desperdício de banda; (b) sem teto
+  de chamadas de enrich por sessão/dia — enxurrada de áudios = custo.
+- **Monitor de saúde de sessão** — `Manager.MonitorHealth` varre as sessões
+  vivas a cada 20s: se o status fica fora de `WORKING` por mais que
+  `SESSION_UNHEALTHY_AFTER` (2m), emite `session.unhealthy` (`{status, since,
+  forSeconds}`); ao voltar a `WORKING`, `session.healthy`. `SCAN_QR_CODE`
+  nunca alerta (aguarda ação). `GET /api/sessions[].health` (`healthy` /
+  `waiting` / `unhealthy`) e banner vermelho no console. Testes com bus real.
 - CI completo + release automático do node n8n por tag.
 
 ---

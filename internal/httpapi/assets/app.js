@@ -210,6 +210,8 @@ const EVENT_CATALOG=[
     ["session.qr","novo QR code"],
     ["session.pair","pareado com sucesso"],
     ["session.logged_out","deslogado"],
+    ["session.unhealthy","sessão caiu / presa fora de WORKING"],
+    ["session.healthy","sessão se recuperou"],
   ]},
   {g:"Mensagens",items:[
     ["message","recebidas (não enviadas por mim)"],
@@ -556,7 +558,21 @@ views.sessions={title:"Sessões",async render(root){
   const page=h("div",{class:"page"}); root.append(page);
   page.append(h("div",{class:"page-head"},h("div",{},h("h2",{},"Sessões"),
     h("p",{},"Status atualiza sozinho. Sessões conectadas voltam automaticamente se o servidor reiniciar."))));
+  const banner=h("div",{}); page.append(banner);
   const grid=h("div",{class:"sess-grid"}); page.append(grid);
+  const healthPill=(hh)=> hh==="unhealthy"
+      ? h("span",{class:"pill bad",title:"fora de WORKING além do limiar (SESSION_UNHEALTHY_AFTER)"},h("span",{class:"dot"}),"instável")
+      : hh==="waiting"
+      ? h("span",{class:"pill warn",title:"conectando / aguardando ação"},h("span",{class:"dot"}),"aguardando")
+      : null;
+  const renderBanner=(list)=>{
+    const bad=list.filter(s=>s.health==="unhealthy").map(s=>s.name);
+    clear(banner);
+    if(!bad.length)return;
+    banner.append(h("div",{class:"card pad",style:"border-color:color-mix(in srgb,var(--red) 40%,transparent);background:color-mix(in srgb,var(--red) 7%,transparent);margin-bottom:14px"},
+      h("strong",{style:"color:var(--red)"},bad.length===1?"1 sessão instável":`${bad.length} sessões instáveis`),
+      h("span",{class:"muted"},"  —  "+bad.join(", ")+". Verifique conexão / relogue.")));
+  };
   grid.append(h("div",{class:"skel skel-card"}),h("div",{class:"skel skel-card"}));
   const refs=new Map(); const pendingQR=new Set(); let poll=null;
   const label={SCAN_QR_CODE:"escaneie o QR",STARTING:"conectando…",WORKING:"conectado",FAILED:"falhou",STOPPED:"parada",LOGGED_OUT:"deslogada"};
@@ -564,6 +580,7 @@ views.sessions={title:"Sessões",async render(root){
   const qrURL=(name)=>`${LS.base}/api/${encodeURIComponent(name)}/auth/qr.png?api_key=${encodeURIComponent(LS.key)}&c=`;
   const buildCard=(s)=>{
     const badgeSlot=h("span",{},badge(s.status));
+    const healthSlot=h("span",{},healthPill(s.health));
     const qrSlot=h("div",{});
     const act=(verb,fn,dg)=>h("button",{class:"btn ghost sm"+(dg?" danger":""),onclick:async e=>{
       const b=e.currentTarget; b.disabled=true;
@@ -575,7 +592,7 @@ views.sessions={title:"Sessões",async render(root){
       h("div",{class:"top"},
         h("div",{},h("div",{class:"nm"},ic("sessions","sm"),s.name),
           h("div",{class:"sub"},"engine "+s.engine+"  ·  ",h("span",{class:"j jid"},s.jid||"sem JID"))),
-        badgeSlot),
+        h("span",{style:"display:flex;gap:6px;align-items:center"},healthSlot,badgeSlot)),
       qrSlot,
       h("div",{class:"copy-row"},
         copyChip("sessão",s.name),
@@ -590,7 +607,7 @@ views.sessions={title:"Sessões",async render(root){
           try{await apiData("DELETE",`/api/sessions/${s.name}`);ok("apagada");route();}catch(e){fail(e);}
         }},ic("trash","sm"))));
     setQR(qrSlot,s);
-    refs.set(s.name,{card,badgeSlot,qrSlot,status:s.status});
+    refs.set(s.name,{card,badgeSlot,healthSlot,qrSlot,status:s.status,health:s.health});
     return card;
   };
   const setQR=(slot,s)=>{
@@ -619,6 +636,10 @@ views.sessions={title:"Sessões",async render(root){
       r.status=s.status;
       if(s.status==="WORKING"&&pendingQR.has(s.name)){pendingQR.delete(s.name);ok(s.name+" conectada ✓");}
     }
+    if(s.health!==r.health){
+      clear(r.healthSlot); const hp=healthPill(s.health); if(hp)r.healthSlot.append(hp);
+      r.health=s.health;
+    }
     // o painel de QR sempre reflete o status atual — some assim que a sessão
     // sai de SCAN_QR_CODE (conectou, parou, etc.), independente de ter havido
     // "mudança" nesse tick.
@@ -640,10 +661,11 @@ views.sessions={title:"Sessões",async render(root){
     SESSIONS=list;
     const now=list.map(s=>s.name).sort().join(","), had=[...refs.keys()].sort().join(",");
     if(now!==had){rebuild(list);return;}
-    list.forEach(apply); refreshQR();
+    list.forEach(apply); renderBanner(list); refreshQR();
   };
   const rebuild=(list)=>{
     clear(grid); refs.clear();
+    renderBanner(list);
     if(!list.length){grid.append(empty("sessions","nenhuma sessão ainda"));return;}
     list.forEach(s=>grid.append(buildCard(s)));
   };

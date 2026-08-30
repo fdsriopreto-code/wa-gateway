@@ -146,6 +146,11 @@ func run() error {
 	if enricher.Enabled() {
 		log.Info("enriquecimento de mídia: on", "base", cfg.AIBaseURL, "padrão", cfg.MediaEnrich)
 	}
+	if cfg.SessionUnhealthyAfter > 0 {
+		mgr.SetHealthThreshold(cfg.SessionUnhealthyAfter)
+		go mgr.MonitorHealth(ctx)
+		log.Info("monitor de saúde de sessão: on", "limiar", cfg.SessionUnhealthyAfter)
+	}
 	if mediaStore.Enabled() {
 		log.Info("armazenamento de midia: coletor ativo", "ttl_global", cfg.MediaTTL, "intervalo", cfg.MediaGCInterval)
 	}

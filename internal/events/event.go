@@ -19,9 +19,11 @@ type Event struct {
 // A engine tambem repassa TODOS os eventos crus dela: os que nao
 // tem mapeamento aqui saem como "engine.<TipoGo>".
 const (
-	SessionStatus = "session.status" // payload: {status, reason}
-	QRCode        = "session.qr"     // payload: {code}
-	PairSuccess   = "session.pair"   // payload: cru da engine
+	SessionStatus    = "session.status"    // payload: {status, reason}
+	QRCode           = "session.qr"        // payload: {code}
+	PairSuccess      = "session.pair"      // payload: cru da engine
+	SessionUnhealthy = "session.unhealthy" // payload: {status, since, forSeconds}
+	SessionHealthy   = "session.healthy"   // payload: {status} — recuperou
 
 	Message         = "message"     // RECEBIDA (nao fromMe), payload normalizado
 	MessageAny      = "message.any" // qualquer, inclusive fromMe, payload normalizado

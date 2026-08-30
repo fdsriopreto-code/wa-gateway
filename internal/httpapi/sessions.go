@@ -20,6 +20,7 @@ type sessionView struct {
 	PushName string          `json:"pushName,omitempty"`
 	Config   json.RawMessage `json:"config"`
 	QR       string          `json:"qr,omitempty"`
+	Health   string          `json:"health,omitempty"` // healthy|waiting|unhealthy (só p/ sessão viva neste nó)
 }
 
 func (d Deps) view(rec store.SessionRecord) sessionView {
@@ -35,6 +36,7 @@ func (d Deps) view(rec store.SessionRecord) sessionView {
 		if j := eng.JID(); j != "" {
 			v.JID = j
 		}
+		v.Health = string(d.Manager.Health(rec.Name))
 	}
 	return v
 }
