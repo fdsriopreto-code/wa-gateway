@@ -178,7 +178,14 @@ func (d *Dispatcher) enqueue(ctx context.Context, e events.Event, metadata map[s
 	}
 	raw, _ := json.Marshal(p)
 
-	_ = d.store.CreateDelivery(ctx, deliveryID, e.Session, wh.URL, e.Name, raw)
+	// Se a linha já existe, este evento é uma re-entrega do WhatsApp (sync ao
+	// reconectar) ou o par message/message.any. Já foi entregue -> ignora;
+	// ainda pendente -> deixa o asynq deduplicar pelo TaskID.
+	if existed, _ := d.store.CreateDelivery(ctx, deliveryID, e.Session, wh.URL, e.Name, raw); existed {
+		if d.store.DeliveryStatus(ctx, deliveryID) == "delivered" {
+			return nil
+		}
+	}
 
 	task := asynq.NewTask(TaskDeliver, raw,
 		asynq.MaxRetry(attempts),

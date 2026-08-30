@@ -253,6 +253,12 @@ sequenceDiagram
   → `POST /api/deliveries/{id}/retry` reenfileira. Esgotou as tentativas →
   emite `webhook.exhausted` no stream (dead-letter observável; o próprio
   webhook pode assiná-lo).
+- **Idempotência de entrega:** para mensagens/recibos, o `Event.ID` é
+  **derivado do message-id do WhatsApp** (não aleatório). Logo `message` e
+  `message.any` da mesma mensagem, e qualquer **re-entrega do WhatsApp**
+  (sync ao reconectar), viram o mesmo `deliveryID` = mesmo `TaskID` do asynq
+  → uma entrega só. Reforço: se a linha em `webhook_deliveries` já existe e
+  está `delivered`, o dispatcher nem reenfileira.
 - **`inbox`**: consumidor do stream (grupo `inbox`, `message.*`, até 4 em
   paralelo) → `store.SaveMessage` / `SaveChat` / `UpdateAck`. Extrai
   `mediaMeta` (directPath/mediaKey/sha…) pra permitir download posterior.

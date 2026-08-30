@@ -243,7 +243,7 @@ func (e *Engine) emitMessage(p map[string]any) {
 }
 
 func (e *Engine) emitAck(st waInStatus) {
-	e.emitID(st.ID+":"+st.Status, "message.ack", map[string]any{
+	e.emitID(st.ID+"|ack:"+st.Status, "message.ack", map[string]any{
 		"ids":       []string{st.ID},
 		"type":      st.Status, // sent|delivered|read|failed
 		"chatId":    st.RecipientID + "@s.whatsapp.net",

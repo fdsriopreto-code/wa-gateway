@@ -5,12 +5,24 @@ import (
 	"time"
 )
 
-func (s *Store) CreateDelivery(ctx context.Context, id, session, url, event string, payload []byte) error {
-	_, err := s.Pool.Exec(ctx,
+// CreateDelivery insere a linha da entrega. existed=true quando já havia uma
+// com esse id (re-entrega do WhatsApp, ou o par message/message.any).
+func (s *Store) CreateDelivery(ctx context.Context, id, session, url, event string, payload []byte) (existed bool, err error) {
+	tag, err := s.Pool.Exec(ctx,
 		`INSERT INTO webhook_deliveries (id, session, url, event, payload) VALUES ($1,$2,$3,$4,$5)
 		 ON CONFLICT (id) DO NOTHING`,
 		id, session, url, event, payload)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 0, nil
+}
+
+// DeliveryStatus devolve o status atual de uma entrega ("" se não existe).
+func (s *Store) DeliveryStatus(ctx context.Context, id string) string {
+	var st string
+	_ = s.Pool.QueryRow(ctx, `SELECT status FROM webhook_deliveries WHERE id=$1`, id).Scan(&st)
+	return st
 }
 
 // MarkPending devolve a entrega para "pending" (usado no reenvio manual).

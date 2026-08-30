@@ -8,6 +8,7 @@ package whatsmeow
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -281,7 +282,8 @@ func (e *Engine) handleEvent(raw any) {
 		e.emitMessage(p, ev.Info.IsFromMe)
 		return
 	case *waEvents.Receipt:
-		e.emit("message.ack", normalizeReceipt(ev, e.wantRaw()))
+		rp := normalizeReceipt(ev, e.wantRaw())
+		e.emitID(ackEventID(rp), "message.ack", rp)
 		return
 	}
 
@@ -300,9 +302,10 @@ func (e *Engine) mediaWorker(jobs <-chan *waEvents.Message) {
 }
 
 func (e *Engine) emitMessage(p map[string]any, fromMe bool) {
-	e.emit("message.any", p)
+	id, _ := p["id"].(string)
+	e.emitID(id, "message.any", p)
 	if !fromMe {
-		e.emit("message", p) // recebidas: o que um bot assina
+		e.emitID(id, "message", p) // recebidas: o que um bot assina
 	}
 }
 
@@ -375,18 +378,36 @@ func (e *Engine) attachMedia(p map[string]any, ev *waEvents.Message) {
 	p["media"] = map[string]any{"id": ev.Info.ID, "url": url, "mimetype": mime, "size": size}
 }
 
-func (e *Engine) emit(name string, payload any) {
+func (e *Engine) emit(name string, payload any) { e.emitID("", name, payload) }
+
+// emitID publica um evento com ID explícito. Para mensagens/recibos o ID é
+// derivado do message-id do WhatsApp — assim uma re-entrega do WhatsApp
+// (sync ao reconectar, retry) ou o par message/message.any produzem o MESMO
+// ID e o dispatcher deduplica pelo TaskID do asynq (nada de webhook repetido).
+func (e *Engine) emitID(id, name string, payload any) {
 	if e.deps.Emit == nil {
 		return
 	}
+	if id == "" {
+		id = events.NewID()
+	}
 	e.deps.Emit(events.Event{
-		ID:        events.NewID(),
+		ID:        id,
 		Session:   e.deps.Session,
 		Name:      name,
 		Timestamp: time.Now().UTC(),
 		Engine:    engineName,
 		Payload:   payload,
 	})
+}
+
+func ackEventID(rp map[string]any) string {
+	ids, _ := rp["ids"].([]string)
+	if len(ids) == 0 {
+		return ""
+	}
+	typ, _ := rp["type"].(string)
+	return strings.Join(ids, ",") + "|ack:" + typ
 }
 
 func (e *Engine) setStatusLocked(s engine.Status) {

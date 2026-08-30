@@ -54,3 +54,20 @@ func TestJidStrEmpty(t *testing.T) {
 		t.Error("JID vazio deveria virar string vazia")
 	}
 }
+
+func TestAckEventID(t *testing.T) {
+	// mesmo recibo -> mesmo id (idempotência em re-entrega)
+	rp := map[string]any{"ids": []string{"A", "B"}, "type": "delivered"}
+	if got := ackEventID(rp); got != "A,B|ack:delivered" {
+		t.Fatalf("got %q", got)
+	}
+	// tipo diferente -> id diferente (delivered vs read não colidem)
+	rp["type"] = "read"
+	if got := ackEventID(rp); got != "A,B|ack:read" {
+		t.Fatalf("got %q", got)
+	}
+	// sem ids -> vazio (cai no id aleatório)
+	if got := ackEventID(map[string]any{"ids": []string{}}); got != "" {
+		t.Fatalf("got %q", got)
+	}
+}
