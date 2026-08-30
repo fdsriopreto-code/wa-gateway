@@ -14,7 +14,8 @@ teardown de Evolution API e WAHA — ver `../repos-analise/blueprint-wa-api-go.h
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | mapa dos pacotes, ciclo de request/evento/sessão, multi-nó, config, como estender |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | o que já roda, o que falta, o que **não** vale a pena (com o porquê) |
-| [docs/MCP.md](docs/MCP.md) | servidor MCP: ligar num agente, do zero ao "oi" só por MCP, as 20 ferramentas |
+| [docs/MCP.md](docs/MCP.md) | servidor MCP: ligar num agente, do zero ao "oi" só por MCP, as ferramentas |
+| [docs/CLOUD.md](docs/CLOUD.md) | motor **Cloud API oficial** da Meta: setup, webhook, botões/listas/templates |
 | `/docs` (no ar) | Swagger UI · `/openapi.json` é gerado de `internal/httpapi/spec.go` |
 
 ## Estado — Fase 1 (MVP)

@@ -83,8 +83,20 @@ pub/sub de WebSocket. **Um binário** — o console web é embutido via `//go:em
 ### 2.1 A interface `Engine`
 
 `internal/engine/engine.go` é o **contrato**. Todo o resto do sistema fala com
-`engine.Engine`, nunca com o whatsmeow direto. Trocar/adicionar um motor
-(ex.: Meta Cloud API no futuro) = nova implementação + `engine.Register`.
+`engine.Engine`, nunca com o whatsmeow direto. Motor novo = nova implementação
++ `engine.Register`. Hoje há **dois**:
+
+| Motor | Pacote | Protocolo | Seleção |
+|---|---|---|---|
+| `wa-gateway` (whatsmeow) | `internal/engine/whatsmeow` | WhatsApp Web multidevice | padrão |
+| `cloud` | `internal/engine/cloud` | **Cloud API oficial da Meta** (Graph API) | `config.cloud` com `phoneNumberId`+`accessToken` |
+
+O motor `cloud` implementa só o que a Cloud API oferece (envio incl.
+**botões/lista/template**, recibos, mídia, perfil de negócio); o resto
+devolve `engine.ErrNotSupported` → HTTP `501`. Não tem QR; os eventos chegam
+por `GET/POST /api/{s}/cloud/webhook` (público, verificado por
+`hub.verify_token` + `X-Hub-Signature-256`), que o engine parseia e injeta no
+mesmo fluxo de eventos. Ver [CLOUD.md](CLOUD.md).
 
 Grupos de métodos: envio (`SendText`, `SendImage`, `SendFile`, `SendVideo`,
 `SendAudio`, `SendSticker`, `SendLocation`, `SendContact`, `SendPoll`,

@@ -98,9 +98,17 @@ Atualizado em **2026-08-30**.
 
 ---
 
-## 🧪 Investigado — **não** vale a pena agora
+## ✅ Botões e listas — **resolvido pela via certa**
 
-### Botões e listas interativas
+Como a pesquisa abaixo previu, a única forma confiável era a **API oficial**.
+Feito: motor `cloud` (`internal/engine/cloud`) fala a WhatsApp Cloud API da
+Meta. `POST /api/sendInteractive` (button/list/cta_url) e `POST
+/api/sendTemplate` funcionam de verdade numa sessão `engine=cloud`; no
+whatsmeow devolvem `501 not_supported`. Setup em [CLOUD.md](CLOUD.md).
+
+<details><summary>Pesquisa original (por que não dá pelo whatsmeow)</summary>
+
+### Botões e listas interativas — via whatsmeow
 
 **Conclusão: não implementar rendering nativo.** Pesquisa (ago/2026):
 
@@ -129,9 +137,10 @@ Atualizado em **2026-08-30**.
    `sessions.engine = "cloud-api"`. Fica para quando houver demanda real
    (precisa de conta WhatsApp Business API + número aprovado + template).
 
-Se ainda assim quiser um endpoint **experimental** `POST /api/sendButtons`
-(monta `NativeFlowMessage`, sem garantia de render) — é ~40 linhas em
-`extras.go` + `send.go`. Marcado como *experimental* no OpenAPI. É só pedir.
+Um endpoint experimental via `NativeFlowMessage` no whatsmeow foi descartado
+em favor do motor `cloud` (acima), que é a via oficial e estável.
+
+</details>
 
 ---
 
@@ -172,7 +181,8 @@ Estado honesto depois do batch de escala/robustez.
 4. ~~Riscos residuais #1/#2/#7~~ ✅
 5. ~~Labels do WhatsApp Business~~ ✅
 6. ~~Dead-letter de webhook~~ ✅
-7. Motor Meta Cloud API (botões/listas) · plugins NATS/AMQP.
+7. ~~Motor Meta Cloud API (botões/listas/templates)~~ ✅
+8. Plugins NATS/AMQP · rate-limit adaptativo · painel de templates.
 
 ---
 

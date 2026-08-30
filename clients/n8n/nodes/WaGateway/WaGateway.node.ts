@@ -55,6 +55,19 @@ const OPS: Op[] = [
 		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), latitude: c.get('latitude'), longitude: c.get('longitude'), name: c.get('name', ''), ...queue(c) }) },
 	{ resource: 'message', operation: 'sendPoll', method: 'POST', path: () => '/api/sendPoll',
 		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), name: c.get('pollName'), options: String(c.get('pollOptions')).split('\n').map((x) => x.trim()).filter(Boolean), selectable: c.get('selectable', 1), ...queue(c) }) },
+	{ resource: 'message', operation: 'buttons', method: 'POST', path: () => '/api/sendInteractive',
+		body: (c) => ({
+			session: c.get('session'), chatId: c.get('chatId'), type: 'button',
+			body: c.get('text'), footer: c.get('footer', '') || undefined,
+			buttons: String(c.get('buttons', '') || '').split('\n').map((l: string) => l.trim()).filter(Boolean)
+				.map((l: string) => { const [id, ...t] = l.split(':'); return { id: id.trim(), title: (t.join(':') || id).trim() }; }),
+		}) },
+	{ resource: 'message', operation: 'template', method: 'POST', path: () => '/api/sendTemplate',
+		body: (c) => ({
+			session: c.get('session'), chatId: c.get('chatId'),
+			name: c.get('templateName'), language: c.get('templateLang', 'pt_BR'),
+			components: (() => { try { return JSON.parse((c.get('components', '') as string) || '[]'); } catch { return []; } })(),
+		}) },
 	{ resource: 'message', operation: 'react', method: 'POST', path: () => '/api/reaction',
 		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), messageId: c.get('messageId'), emoji: c.get('emoji', ''), fromMe: c.get('fromMe', false) }) },
 	{ resource: 'message', operation: 'forward', method: 'POST', path: () => '/api/forwardMessage',
@@ -125,7 +138,8 @@ export class WaGateway implements INodeType {
 			opt('message', [
 				['Enviar texto', 'sendText'], ['Enviar imagem', 'sendImage'], ['Enviar documento', 'sendFile'],
 				['Enviar vídeo', 'sendVideo'], ['Enviar áudio', 'sendAudio'], ['Enviar localização', 'sendLocation'],
-				['Enviar enquete', 'sendPoll'], ['Reagir', 'react'], ['Encaminhar', 'forward'],
+				['Enviar enquete', 'sendPoll'], ['Enviar botões (Cloud API)', 'buttons'], ['Enviar template (Cloud API)', 'template'],
+				['Reagir', 'react'], ['Encaminhar', 'forward'],
 			], 'sendText'),
 			opt('session', [
 				['Criar', 'create'], ['Listar', 'list'], ['Detalhes', 'get'], ['Iniciar', 'start'], ['Parar', 'stop'],
@@ -143,11 +157,19 @@ export class WaGateway implements INodeType {
 			str('session', 'Sessão', { required: true, show: { resource: ['message', 'group', 'contact', 'chat', 'label'] } }),
 			str('session', 'Sessão', { required: true, show: { resource: ['session'], operation: ['get', 'start', 'stop', 'restart', 'logout', 'qr', 'pairCode', 'me'] } }),
 			str('chatId', 'Chat ID', { placeholder: '5599999999999@s.whatsapp.net', required: true,
-				show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendLocation', 'sendPoll', 'react', 'forward'] } }),
+				show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendLocation', 'sendPoll', 'react', 'forward', 'buttons', 'template'] } }),
 			str('chatId', 'Chat ID', { required: true, show: { resource: ['chat'], operation: ['history'] } }),
 
 			str('text', 'Texto', { typeOptions: { rows: 3 }, required: true, show: { resource: ['message'], operation: ['sendText'] } }),
 			bool('linkPreview', 'Preview de link', false, { show: { resource: ['message'], operation: ['sendText'] } }),
+
+			// botões / template (Cloud API)
+			str('text', 'Texto (corpo)', { typeOptions: { rows: 2 }, required: true, show: { resource: ['message'], operation: ['buttons'] } }),
+			str('buttons', 'Botões (um por linha: id:título)', { typeOptions: { rows: 3 }, placeholder: 'sim:Confirmar\nnao:Cancelar', required: true, show: { resource: ['message'], operation: ['buttons'] } }),
+			str('footer', 'Rodapé', { show: { resource: ['message'], operation: ['buttons'] } }),
+			str('templateName', 'Nome do template', { required: true, show: { resource: ['message'], operation: ['template'] } }),
+			str('templateLang', 'Idioma', { default: 'pt_BR', show: { resource: ['message'], operation: ['template'] } }),
+			str('components', 'Components (JSON da Graph API)', { typeOptions: { rows: 4 }, placeholder: '[{"type":"body","parameters":[{"type":"text","text":"#4821"}]}]', show: { resource: ['message'], operation: ['template'] } }),
 
 			// media
 			{

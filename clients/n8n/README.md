@@ -6,7 +6,7 @@ Quatro nodes:
 
 | Node | Pra quê |
 |---|---|
-| **wa-gateway** | Enviar texto/imagem/documento/vídeo/áudio/localização/enquete, reagir, encaminhar, criar/gerenciar sessões, grupos, contatos (incl. **listar agenda**), **etiquetas do Business**, ler histórico. Aceita **binário do nó anterior** (converte pra base64 sozinho). |
+| **wa-gateway** | Enviar texto/imagem/documento/vídeo/áudio/localização/enquete, **botões e templates (Cloud API)**, reagir, encaminhar, criar/gerenciar sessões, grupos, contatos (incl. **listar agenda**), **etiquetas do Business**, ler histórico. Aceita **binário do nó anterior** (converte pra base64 sozinho). |
 | **wa-gateway Trigger** | Recebe eventos de uma sessão e **roteia por tipo**: saídas separadas para **Texto · Imagem · Áudio · Vídeo · Documento · Outros · Eventos** (sem precisar de Switch). Opcionalmente **baixa a mídia e anexa como binário** (`data`) pronta pro próximo node. Ao ativar o workflow, **registra a URL do webhook na sessão automaticamente**. Valida HMAC-SHA256 se você definir um segredo. |
 | **wa-gateway Fila (debounce)** | Agrupa mensagens picadas por contato (Redis). `Enfileirar` → `Wait` → `Coletar`: se chegou mensagem nova na janela, sai por **Superado** (essa execução desiste); senão sai por **Continuar** com a fila unificada em `text` / `messages`. `Cancelar` descarta lotes pendentes depois que o bot respondeu. Precisa da credencial `Redis` do n8n. |
 | **wa-gateway Pausa do bot** | Handoff humano por contato (Redis + TTL). `Pausar` quando você responde manualmente (`fromMe`), `Verificar` antes de deixar a IA responder (saídas **Ativo** / **Pausado**), `Retomar` pra devolver pro bot. Precisa da credencial `Redis` do n8n. |

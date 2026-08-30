@@ -1,11 +1,61 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"wa-gateway/internal/engine"
 	"wa-gateway/internal/outbox"
 )
+
+// sendInteractive: botões/lista/CTA. Só funciona em sessão engine=cloud;
+// no whatsmeow devolve 501 not_supported.
+func (d Deps) sendInteractive(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Session string `json:"session"`
+		ChatID  string `json:"chatId"`
+		engine.Interactive
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if req.ChatID == "" || req.Type == "" || req.Body == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "chatId, type e body sao obrigatorios")
+		return
+	}
+	eng, ok := d.engineFor(w, req.Session)
+	if !ok {
+		return
+	}
+	res, err := eng.SendInteractive(r.Context(), req.ChatID, req.Interactive)
+	sendResp(w, res, err)
+}
+
+// sendTemplate: mensagem de template aprovada (Cloud API).
+func (d Deps) sendTemplate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Session    string          `json:"session"`
+		ChatID     string          `json:"chatId"`
+		Name       string          `json:"name"`
+		Language   string          `json:"language"`
+		Components json.RawMessage `json:"components"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if req.ChatID == "" || req.Name == "" || req.Language == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "chatId, name e language sao obrigatorios")
+		return
+	}
+	eng, ok := d.engineFor(w, req.Session)
+	if !ok {
+		return
+	}
+	res, err := eng.SendTemplate(r.Context(), req.ChatID, req.Name, req.Language, req.Components)
+	sendResp(w, res, err)
+}
 
 // queueOpts e embutido nas requests de envio: quando enqueue=true, o envio
 // passa pela fila de saida com pacing por sessao (anti-ban) em vez de sair

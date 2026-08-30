@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -96,10 +97,14 @@ func decodeB64(raw string) (data []byte, mimetype string, err error) {
 	return data, mimetype, err
 }
 
-// sendResp e a resposta padrao de qualquer envio: 201 com o SendResult, ou
-// 502 se a engine falhou.
+// sendResp e a resposta padrao de qualquer envio: 201 com o SendResult, 501
+// se o motor nao suporta a operacao, ou 502 se a engine falhou.
 func sendResp(w http.ResponseWriter, res engine.SendResult, err error) {
 	if err != nil {
+		if errors.Is(err, engine.ErrNotSupported) {
+			writeErr(w, http.StatusNotImplemented, "not_supported", err.Error())
+			return
+		}
 		writeErr(w, http.StatusBadGateway, "send_failed", err.Error())
 		return
 	}

@@ -19,7 +19,8 @@ import (
 	"wa-gateway/internal/auth"
 	"wa-gateway/internal/cache"
 	"wa-gateway/internal/config"
-	_ "wa-gateway/internal/engine/whatsmeow" // registra a engine
+	_ "wa-gateway/internal/engine/cloud"     // registra o motor Cloud API
+	_ "wa-gateway/internal/engine/whatsmeow" // registra o motor whatsmeow
 	"wa-gateway/internal/events"
 	"wa-gateway/internal/httpapi"
 	"wa-gateway/internal/inbox"

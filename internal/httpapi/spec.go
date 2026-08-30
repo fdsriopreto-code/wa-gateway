@@ -56,6 +56,9 @@ var specEndpoints = []ep{
 	{"POST", "/api/deleteMessage", "Messaging", "Apagar (revoke)", map[string]any{"session": "default", "chatId": "…", "messageId": "<id>", "fromMe": true}, nil},
 	{"POST", "/api/sendSeen", "Messaging", "Marcar como lida", map[string]any{"session": "default", "chatId": "…", "messageId": "<id>"}, nil},
 	{"POST", "/api/presence", "Messaging", "Presença no chat (digitando…)", map[string]any{"session": "default", "chatId": "…", "state": "typing"}, nil},
+	{"POST", "/api/sendInteractive", "Messaging", "Botões / lista / CTA (só engine cloud)", map[string]any{"session": "default", "chatId": "…", "type": "button", "body": "Escolha:", "buttons": []any{map[string]any{"id": "1", "title": "Sim"}, map[string]any{"id": "2", "title": "Não"}}}, nil},
+	{"POST", "/api/sendTemplate", "Messaging", "Template aprovado (só engine cloud)", map[string]any{"session": "default", "chatId": "…", "name": "hello_world", "language": "en_US", "components": []any{}}, nil},
+	{"GET", "/api/{session}/cloud/webhook", "Cloud API", "Webhook da Meta (verificação + recebimento) — sem X-Api-Key", nil, nil},
 
 	// ---- labels (Business)
 	{"GET", "/api/{session}/labels", "Labels", "Listar etiquetas", nil, nil},

@@ -177,9 +177,14 @@ func (m *Manager) sessionBehavior(name string) engine.AutoBehavior {
 func lockKey(name string) string { return "wa:lock:" + name }
 
 // Upsert cria ou atualiza o registro da sessao (sem inicia-la). Cifra os
-// secrets de webhook antes de gravar (Get/List devolvem decifrado).
+// secrets de webhook antes de gravar (Get/List devolvem decifrado). Se a
+// config traz credenciais Cloud API, a sessao passa a usar o motor "cloud".
 func (m *Manager) Upsert(ctx context.Context, name string, cfg json.RawMessage) (store.SessionRecord, error) {
 	eng := m.defaultEngine
+	if pc, err := ParseConfig(cfg); err == nil && pc.Cloud != nil &&
+		pc.Cloud.PhoneNumberID != "" && pc.Cloud.AccessToken != "" {
+		eng = "cloud"
+	}
 	m.rawCache.Delete(name)
 	if m.secretBox != nil {
 		cfg = MapWebhookSecrets(cfg, m.secretBox.Seal)
@@ -265,9 +270,20 @@ func (m *Manager) start(ctx context.Context, name string, recovering bool) error
 		return ErrLocked
 	}
 
+	cfg := m.sessionConfig(name)
+	var cloud *engine.CloudConfig
+	if c := cfg.Cloud; c != nil && c.PhoneNumberID != "" && c.AccessToken != "" {
+		cloud = &engine.CloudConfig{
+			PhoneNumberID: c.PhoneNumberID, AccessToken: c.AccessToken, WABAID: c.WABAID,
+			GraphVersion: c.GraphVersion, VerifyToken: c.VerifyToken, AppSecret: c.AppSecret,
+		}
+	}
+
 	engName := rec.Engine
-	if engName == "" {
-		engName = m.defaultEngine
+	if cloud != nil {
+		engName = "cloud"
+	} else if engName == "" || engName == "cloud" {
+		engName = m.defaultEngine // "cloud" sem credenciais volta pro padrão
 	}
 	factory, ok := engine.Get(engName)
 	if !ok {
@@ -277,6 +293,7 @@ func (m *Manager) start(ctx context.Context, name string, recovering bool) error
 
 	eng, err := factory(engine.Deps{
 		Session:    name,
+		Cloud:      cloud,
 		DSN:        m.dsn,
 		Logger:     m.log.With("session", name),
 		Emit:       m.emit(name, engName),

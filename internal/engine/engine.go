@@ -4,11 +4,17 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"sync"
 
 	"wa-gateway/internal/events"
 )
+
+// ErrNotSupported: a operação não existe neste motor (ex.: grupos na Cloud
+// API, botões interativos no whatsmeow). Os handlers HTTP mapeiam para 501.
+var ErrNotSupported = errors.New("operação não suportada por este motor")
 
 type Status string
 
@@ -69,6 +75,7 @@ type StoredMedia struct {
 	FileEncSHA256 []byte
 	FileSHA256    []byte
 	FileLength    uint64
+	CloudID       string // id de mídia da Cloud API (quando engine=cloud)
 }
 
 // Me e o perfil da propria sessao.
@@ -95,6 +102,38 @@ type Contact struct {
 	Name  string `json:"name"`
 	Phone string `json:"phone,omitempty"`
 	VCard string `json:"vcard,omitempty"`
+}
+
+// --- mensagens interativas / templates (WhatsApp Cloud API) ---
+
+// Interactive e uma mensagem com botões, lista ou CTA de URL. Só o motor
+// Cloud API renderiza isso de forma confiável.
+type Interactive struct {
+	Type       string        `json:"type"` // "button" | "list" | "cta_url"
+	Body       string        `json:"body"`
+	Header     string        `json:"header,omitempty"`
+	Footer     string        `json:"footer,omitempty"`
+	Buttons    []Button      `json:"buttons,omitempty"`    // type=button (máx 3)
+	ButtonText string        `json:"buttonText,omitempty"` // type=list: rótulo do menu
+	Sections   []ListSection `json:"sections,omitempty"`   // type=list
+	URL        string        `json:"url,omitempty"`        // type=cta_url
+	DisplayURL string        `json:"displayUrl,omitempty"` // type=cta_url: rótulo do botão
+}
+
+type Button struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+type ListSection struct {
+	Title string    `json:"title,omitempty"`
+	Rows  []ListRow `json:"rows"`
+}
+
+type ListRow struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
 }
 
 // Label e uma etiqueta do WhatsApp Business.
@@ -202,6 +241,11 @@ type Engine interface {
 	SendContact(ctx context.Context, chatID string, cs []Contact) (SendResult, error)
 	SendPoll(ctx context.Context, chatID, name string, options []string, selectable int, opts MessageOpts) (SendResult, error)
 	Forward(ctx context.Context, toChatID string, src ForwardSource) (SendResult, error)
+	// SendInteractive: botões/lista/CTA. ErrNotSupported no whatsmeow.
+	SendInteractive(ctx context.Context, chatID string, i Interactive) (SendResult, error)
+	// SendTemplate: mensagem de template aprovada (Cloud API). components é o
+	// array "components" cru da Graph API. ErrNotSupported no whatsmeow.
+	SendTemplate(ctx context.Context, chatID, name, lang string, components json.RawMessage) (SendResult, error)
 
 	// --- operacoes sobre mensagens ---
 	SendReaction(ctx context.Context, ref MessageRef, emoji string) (SendResult, error)
@@ -262,9 +306,22 @@ type AutoBehavior struct {
 	AutoOnline bool
 }
 
+// CloudConfig e a configuracao de uma sessao que fala a WhatsApp Cloud API
+// oficial da Meta em vez do protocolo Web (whatsmeow).
+type CloudConfig struct {
+	PhoneNumberID string `json:"phoneNumberId"`
+	AccessToken   string `json:"accessToken"`
+	WABAID        string `json:"wabaId,omitempty"`
+	GraphVersion  string `json:"graphVersion,omitempty"` // default "v21.0"
+	VerifyToken   string `json:"verifyToken,omitempty"`  // GET do webhook (hub.verify_token)
+	AppSecret     string `json:"appSecret,omitempty"`    // valida X-Hub-Signature-256
+}
+
 // Deps e o que o gateway injeta em cada engine.
 type Deps struct {
 	Session string
+	// Cloud, se != nil, e a config do motor Cloud API desta sessao.
+	Cloud *CloudConfig
 	// DSN do Postgres; a engine usa para o store proprio dela (ex.: sqlstore).
 	DSN    string
 	Logger *slog.Logger

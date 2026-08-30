@@ -15,6 +15,20 @@ type Config struct {
 	AutoRead bool `json:"autoRead,omitempty"`
 	// AutoOnline mantem a sessao com presenca "available" apos conectar.
 	AutoOnline bool `json:"autoOnline,omitempty"`
+	// Cloud: credenciais da WhatsApp Cloud API. Preenchido = a sessao usa o
+	// motor "cloud" (oficial da Meta) em vez do whatsmeow.
+	Cloud *CloudConfig `json:"cloud,omitempty"`
+}
+
+// CloudConfig espelha engine.CloudConfig (o pacote session nao pode importar
+// engine sem ciclo). O Manager converte um no outro.
+type CloudConfig struct {
+	PhoneNumberID string `json:"phoneNumberId"`
+	AccessToken   string `json:"accessToken"`
+	WABAID        string `json:"wabaId,omitempty"`
+	GraphVersion  string `json:"graphVersion,omitempty"`
+	VerifyToken   string `json:"verifyToken,omitempty"`
+	AppSecret     string `json:"appSecret,omitempty"`
 }
 
 // OutboxConfig sobrescreve, para esta sessao, o pacing global da fila de

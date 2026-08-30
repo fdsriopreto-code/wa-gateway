@@ -30,6 +30,8 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 	r.Get("/api/version", d.version)
 	r.Get("/openapi.json", d.openapiJSON)
 	r.Get("/docs", d.docsPage)
+	// webhook da WhatsApp Cloud API (a Meta chama; sem X-Api-Key)
+	r.HandleFunc("/api/{session}/cloud/webhook", d.cloudWebhook)
 
 	// autenticado
 	r.Group(func(r chi.Router) {
@@ -104,6 +106,8 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		r.Post("/api/sendLocation", d.sendLocation)
 		r.Post("/api/sendContact", d.sendContact)
 		r.Post("/api/sendPoll", d.sendPoll)
+		r.Post("/api/sendInteractive", d.sendInteractive)
+		r.Post("/api/sendTemplate", d.sendTemplate)
 
 		// --- operacoes sobre mensagens ---
 		r.Post("/api/reaction", d.reaction)
