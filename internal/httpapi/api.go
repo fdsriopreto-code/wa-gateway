@@ -3,11 +3,14 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"wa-gateway/internal/cache"
 	"wa-gateway/internal/engine"
@@ -58,11 +61,22 @@ func (d Deps) engineFor(w http.ResponseWriter, session string) (engine.Engine, b
 		return nil, false
 	}
 	eng, ok := d.Manager.Engine(session)
-	if !ok {
-		writeErr(w, http.StatusConflict, "not_active", "sessao nao esta ativa neste no")
+	if ok {
+		return eng, true
+	}
+
+	// nao esta viva aqui: diferencia "nao existe" de "existe mas parada" pra
+	// nao deixar o cliente adivinhando (409 generico confunde).
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	rec, err := d.Manager.Get(ctx, session)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, "not_found", fmt.Sprintf("sessao %q nao existe", session))
 		return nil, false
 	}
-	return eng, true
+	writeErr(w, http.StatusConflict, "not_active",
+		fmt.Sprintf("sessao %q nao esta ativa (status=%s) — inicie com POST /api/sessions/%s/start", session, rec.Status, session))
+	return nil, false
 }
 
 // decodeB64 aceita base64 puro ou data URI ("data:<mime>;base64,<...>") e
