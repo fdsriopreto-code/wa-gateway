@@ -44,9 +44,14 @@ func NewDispatcher(st *store.Store, client *asynq.Client, log *slog.Logger, time
 	if maxAttempts <= 0 {
 		maxAttempts = 15
 	}
+	tr := &http.Transport{
+		MaxIdleConns:        200,
+		MaxIdleConnsPerHost: 32,
+		IdleConnTimeout:     90 * time.Second,
+	}
 	return &Dispatcher{
 		store: st, client: client, log: log,
-		http:        &http.Client{Timeout: timeout},
+		http:        &http.Client{Timeout: timeout, Transport: tr},
 		maxAttempts: maxAttempts,
 	}
 }

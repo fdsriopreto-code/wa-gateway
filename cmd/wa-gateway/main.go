@@ -61,7 +61,7 @@ func run() error {
 	if err := store.Migrate(cfg.DatabaseURL); err != nil {
 		return err
 	}
-	st, err := store.New(ctx, cfg.DatabaseURL)
+	st, err := store.New(ctx, cfg.DatabaseURL, int32(cfg.DatabaseMaxConn))
 	if err != nil {
 		return err
 	}

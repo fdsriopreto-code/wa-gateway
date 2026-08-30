@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib" // driver database/sql "pgx", usado pelo goose e pelo whatsmeow
@@ -17,8 +18,20 @@ type Store struct {
 	Pool *pgxpool.Pool
 }
 
-func New(ctx context.Context, dsn string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+func New(ctx context.Context, dsn string, maxConns int32) (*Store, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("dsn invalido: %w", err)
+	}
+	if maxConns > 0 {
+		cfg.MaxConns = maxConns
+	} else if cfg.MaxConns < 10 {
+		cfg.MaxConns = 10 // default do pgx (4/CPU) costuma ser baixo p/ o gateway
+	}
+	cfg.MinConns = 2
+	cfg.MaxConnIdleTime = 5 * time.Minute
+
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("pgxpool: %w", err)
 	}

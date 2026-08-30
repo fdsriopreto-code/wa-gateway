@@ -15,8 +15,9 @@ type Config struct {
 	HTTPAddr  string
 	PublicURL string
 
-	DatabaseURL string
-	RedisURL    string
+	DatabaseURL     string
+	DatabaseMaxConn int
+	RedisURL        string
 
 	APIKey        string // chave-mestra opcional (escopo "*")
 	DefaultEngine string
@@ -62,6 +63,7 @@ func Load() (Config, error) {
 		HTTPAddr:           env("HTTP_ADDR", ":3000"),
 		PublicURL:          env("PUBLIC_URL", "http://localhost:3000"),
 		DatabaseURL:        env("DATABASE_URL", ""),
+		DatabaseMaxConn:    envInt("DATABASE_MAX_CONNS", 0),
 		RedisURL:           env("REDIS_URL", "redis://localhost:6379/0"),
 		APIKey:             env("API_KEY", ""),
 		DefaultEngine:      env("DEFAULT_ENGINE", "whatsmeow"),

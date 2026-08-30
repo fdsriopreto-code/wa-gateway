@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log/slog"
+	"sync"
 	"time"
 
 	"wa-gateway/internal/engine"
@@ -22,10 +23,26 @@ type Consumer struct {
 
 func New(db *store.Store, log *slog.Logger) *Consumer { return &Consumer{db: db, log: log} }
 
-// Run consome message.* ate o contexto ser cancelado.
+// Run consome message.* ate o contexto ser cancelado. Usa um pool pequeno
+// para que a latencia do Postgres nao serialize a ingestao.
 func (c *Consumer) Run(ctx context.Context, bus *events.Bus) {
 	ch, cancel := bus.Subscribe("inbox", "message.*", 8192)
 	defer cancel()
+
+	const workers = 4
+	work := make(chan events.Event, 1024)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for e := range work {
+				c.handle(ctx, e)
+			}
+		}()
+	}
+	defer func() { close(work); wg.Wait() }()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -34,7 +51,11 @@ func (c *Consumer) Run(ctx context.Context, bus *events.Bus) {
 			if !ok {
 				return
 			}
-			c.handle(ctx, e)
+			select {
+			case work <- e:
+			default:
+				c.log.Warn("inbox: pool cheio, evento descartado", "event", e.Name)
+			}
 		}
 	}
 }

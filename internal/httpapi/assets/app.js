@@ -148,6 +148,14 @@ function copyBtn(label, text){
   const s=h("span",{onclick:async()=>{await navigator.clipboard.writeText(text);clear(s);s.append(ic("check","sm"),"copiado");setTimeout(()=>{clear(s);s.append(ic("copy","sm"),label);},1200);}},ic("copy","sm"),label);
   return s;
 }
+function copyChip(label, value, shown){
+  const c=h("button",{class:"cchip",title:"copiar: "+value,onclick:async()=>{
+    try{await navigator.clipboard.writeText(value);}catch{}
+    c.classList.add("done");const v=c.querySelector(".vl");const old=v.textContent;v.textContent="copiado ✓";
+    setTimeout(()=>{c.classList.remove("done");v.textContent=old;},1100);
+  }},label?h("span",{class:"lb"},label):null,h("span",{class:"vl"},shown||value));
+  return c;
+}
 function jsonOut(data, extra){
   const raw=typeof data==="string"?data:JSON.stringify(data,null,2);
   const pre=h("pre",{class:"out"});
@@ -414,6 +422,58 @@ function endpointCard(ep, openFirst){
 /* ═══════════════════════════════════════════════ views */
 const views={};
 
+views.quickstart={title:"Início rápido",async render(root){
+  const page=h("div",{class:"page"}); root.append(page);
+  page.append(h("div",{class:"page-head"},h("h2",{},"Início rápido"),
+    h("p",{},"Do zero a mandar mensagem em 4 passos. Cada bloco já vem com o que copiar.")));
+  let sessions=[];try{sessions=await loadSessions();}catch{}
+  const connected=sessions.find(s=>s.status==="WORKING");
+  const s0=connected||sessions[0];
+  const num=(s0&&s0.jid?s0.jid:"5599999999999").split("@")[0].split(":")[0];
+  const key=LS.key||"SUA_API_KEY";
+  const step=(n,done,title,desc,...extra)=>h("div",{class:"qs-step"+(done?" done":"")},
+    h("div",{class:"n"},done?"✓":n),h("div",{class:"body"},h("h4",{},title),desc?h("p",{},desc):null,...extra));
+
+  page.append(h("div",{class:"card pad"},
+    step(1,!!LS.key,"Conecte-se ao gateway",
+      "Vá em Conexão, cole sua API key. Já feito se você está vendo isto.",
+      h("a",{class:"btn ghost sm",href:"#/settings"},"Conexão")),
+    step(2,sessions.length>0,"Crie uma sessão",
+      "Uma sessão = um número de WhatsApp. Depois de criar, escaneie o QR (ou use 'Parear por código').",
+      h("a",{class:"btn sm",href:"#/sessions"},ic("plus","sm"),"Sessões")),
+    step(3,!!connected,"Pareie o número",
+      connected?`Conectado: ${s0.name} · ${num}`:"Abra a sessão, escaneie o QR no WhatsApp → Aparelhos conectados.",
+      !connected&&sessions.length?h("a",{class:"btn ghost sm",href:"#/sessions"},"Ver QR"):null),
+    step(4,false,"Envie a primeira mensagem",
+      "Troque o número pelo destino real. O chatId é o número + @s.whatsapp.net.",
+      h("div",{class:"out-bar"},copyBtn("copiar",`curl -X POST '${LS.base}/api/sendText' -H 'X-Api-Key: ${key}' -H 'Content-Type: application/json' -d '{"session":"${s0?s0.name:"default"}","chatId":"${num}@s.whatsapp.net","text":"funcionou!"}'`)),
+      h("pre",{class:"out"},`curl -X POST '${LS.base}/api/sendText' \\\n  -H 'X-Api-Key: ${key}' -H 'Content-Type: application/json' \\\n  -d '{"session":"${s0?s0.name:"default"}","chatId":"${num}@s.whatsapp.net","text":"funcionou!"}'`),
+      h("div",{style:"margin-top:8px"},h("a",{class:"btn ghost sm",href:"#/playground"},"abrir no Playground"),
+        h("a",{class:"btn ghost sm",href:"#/chat",style:"margin-left:6px"},"testar no Chat"))),
+  ));
+
+  page.append(h("div",{class:"sec-title"},ic("link","sm"),"Receber mensagens (webhook / n8n)"),
+    h("div",{class:"card pad"},
+      h("p",{class:"muted",style:"font-size:12.5px;margin-bottom:10px"},
+        "1) No n8n, adicione o node ",h("b",{},"wa-gateway Trigger")," (ou um node Webhook). "),
+      h("p",{class:"muted",style:"font-size:12.5px;margin-bottom:10px"},
+        "2) ",h("b",{},"Ative o workflow")," (toggle no topo) — sem isso o n8n usa uma URL de teste temporária e a mensagem real não chega."),
+      h("p",{class:"muted",style:"font-size:12.5px;margin-bottom:10px"},
+        "3) Ou registre manual na config da sessão:"),
+      h("div",{class:"out-bar"},copyBtn("copiar",`{"webhooks":[{"url":"https://SEU-N8N/webhook/xxxx","events":["message"],"hmac":{"secret":"um-segredo"}}]}`)),
+      h("pre",{class:"out"},`{\n  "webhooks": [\n    { "url": "https://SEU-N8N/webhook/xxxx",\n      "events": ["message"],\n      "hmac": { "secret": "um-segredo" } }\n  ]\n}`),
+      s0?h("button",{class:"btn ghost sm",style:"margin-top:10px",onclick:async()=>{
+        try{const r=await apiData("POST",`/api/sessions/${encodeURIComponent(s0.name)}/webhook/test`,{});ok("teste disparado");
+          modal("Teste de webhook",null,jsonOut(r));}catch(e){fail(e);}
+      }},ic("send","sm"),"Disparar webhook.test na sessão "+s0.name):null));
+
+  page.append(h("div",{class:"sec-title"},ic("cmd","sm"),"Integração"),
+    h("div",{class:"card pad"},
+      kv("Node n8n",h("a",{class:"mono",style:"color:var(--ac)",href:"https://www.npmjs.com/package/n8n-nodes-wa-gateway",target:"_blank",rel:"noopener"},"n8n-nodes-wa-gateway")),
+      kv("Swagger UI",h("a",{class:"mono",style:"color:var(--ac)",href:LS.base+"/docs",target:"_blank",rel:"noopener"},LS.base+"/docs")),
+      kv("MCP (IA)",h("span",{class:"mono muted"},"POST "+LS.base+"/mcp"))));
+}};
+
 views.overview={title:"Visão geral",async render(root){
   const page=h("div",{class:"page"}); root.append(page);
   page.append(h("div",{class:"page-head"},h("h2",{},"Visão geral"),h("p",{},"Estado do gateway, das sessões e atividade em tempo real.")));
@@ -501,12 +561,18 @@ views.sessions={title:"Sessões",async render(root){
       try{await apiData("POST",`/api/sessions/${s.name}/${fn}`);if(fn==="start"||fn==="restart")pendingQR.add(s.name);ok(`${s.name}: ${verb}`);await refresh();}
       catch(err){fail(err);}finally{b.disabled=false;}
     }},verb);
+    const num=(s.jid||"").split("@")[0].split(":")[0];
     const card=h("div",{class:"card sess hover","data-name":s.name},
       h("div",{class:"top"},
         h("div",{},h("div",{class:"nm"},ic("sessions","sm"),s.name),
           h("div",{class:"sub"},"engine "+s.engine+"  ·  ",h("span",{class:"j jid"},s.jid||"sem JID"))),
         badgeSlot),
       qrSlot,
+      h("div",{class:"copy-row"},
+        copyChip("sessão",s.name),
+        num?copyChip("número",num):null,
+        s.jid?copyChip("chatId",num+"@s.whatsapp.net",num+"@s.whatsapp.net"):null,
+        h("button",{class:"cchip",onclick:()=>snippetModal(s)},ic("playground","sm"),"snippet")),
       h("div",{class:"acts"},
         act("start","start"),act("stop","stop"),act("restart","restart"),act("logout","logout",1),
         h("button",{class:"btn subtle sm",onclick:()=>cfgModal(s)},ic("settings","sm"),"Configurar"),
@@ -730,6 +796,25 @@ function webhookEditor(wh, onRemove){
     if(secret.value.trim())w.hmac={secret:secret.value.trim()};
     return w;
   }};
+}
+
+function snippetModal(s){
+  const num=(s.jid||"5599999999999").split("@")[0].split(":")[0];
+  const chat=num+"@s.whatsapp.net";
+  const key=LS.key||"SUA_API_KEY";
+  const curl=`curl -X POST '${LS.base}/api/sendText' \\\n`+
+    `  -H 'X-Api-Key: ${key}' -H 'Content-Type: application/json' \\\n`+
+    `  -d '{"session":"${s.name}","chatId":"${chat}","text":"olá do wa-gateway"}'`;
+  const node=`Node "wa-gateway"\n  Recurso:  Mensagem\n  Operação: Enviar texto\n  Sessão:   ${s.name}\n  Chat ID:  {{ $json.payload.chatId }}\n  Texto:    {{ $json.output }}`;
+  const wh=JSON.stringify({webhooks:[{url:"https://SEU-N8N/webhook/xxxx",events:["message"],hmac:{secret:"um-segredo"}}]},null,2);
+  const pane=h("div",{});
+  const bar=h("div",{class:"tabs-mini",style:"margin-bottom:8px"});
+  const tab=(nm,txt)=>{const b=h("button",{onclick:()=>{[...bar.children].forEach(x=>x.classList.remove("active"));b.classList.add("active");
+    clear(pane);pane.append(h("div",{class:"out-bar"},copyBtn("copiar",txt)),h("pre",{class:"out"},txt));}},nm);return b;};
+  const a=tab("cURL",curl),bb=tab("n8n",node),cc=tab("webhook config",wh);
+  bar.append(a,bb,cc); a.classList.add("active");
+  pane.append(h("div",{class:"out-bar"},copyBtn("copiar",curl)),h("pre",{class:"out"},curl));
+  modal("Snippets — "+s.name,"pronto pra colar. chatId já montado com o número da sessão.",h("div",{},bar,pane));
 }
 
 function qrModal(name){
@@ -1104,7 +1189,7 @@ function openPalette(){
 
 /* ═══════════════════════════════════════════════ shell */
 const NAV=[
-  ["Principal",[["overview","overview","Visão geral"],["sessions","sessions","Sessões"],["chat","chat","Chat"],["playground","playground","Playground"]]],
+  ["Principal",[["quickstart","play","Início rápido"],["overview","overview","Visão geral"],["sessions","sessions","Sessões"],["chat","chat","Chat"],["playground","playground","Playground"]]],
   ["Observar",[["events","events","Eventos ao vivo"],["monitor","monitor","Monitoramento"]]],
   ["Config",[["keys","keys","API keys"],["settings","settings","Conexão"]]],
 ];
@@ -1171,7 +1256,7 @@ function onboard(){
       h("div",{class:"btn-row",style:"margin-top:8px"},h("button",{class:"btn block",onclick:async e=>{
         if(!key.value.trim())return fail("cole a API key");
         e.target.disabled=true;LS.base=base.value;LS.key=key.value;
-        try{await apiData("GET","/api/version");ok("conectado ✓");renderFoot();location.hash="#/overview";route();}
+        try{await apiData("GET","/api/version");ok("conectado ✓");renderFoot();location.hash="#/quickstart";route();}
         catch(err){fail(err);e.target.disabled=false;}
       }},"Entrar")))));
 }

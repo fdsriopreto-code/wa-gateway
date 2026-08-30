@@ -30,6 +30,13 @@ export class WaGatewayTrigger implements INodeType {
 		],
 		properties: [
 			{
+				displayName:
+					'Ative o workflow (toggle no topo) para receber mensagens de verdade. Só no editor, o n8n usa uma URL de TESTE temporária.',
+				name: 'activateNotice',
+				type: 'notice',
+				default: '',
+			},
+			{
 				displayName: 'Sessão', name: 'session', type: 'string', default: '', required: true,
 				description: 'Nome da sessão que vai disparar o fluxo',
 			},
@@ -44,7 +51,8 @@ export class WaGatewayTrigger implements INodeType {
 			},
 			{
 				displayName: 'Registrar webhook na sessão automaticamente', name: 'autoRegister', type: 'boolean', default: true,
-				description: 'Whether to add/remove esta URL em config.webhooks da sessão ao ativar/desativar',
+				description:
+					'Whether to add/remove esta URL em config.webhooks da sessão ao ativar/desativar o workflow',
 			},
 		],
 	};
@@ -62,9 +70,11 @@ export class WaGatewayTrigger implements INodeType {
 				const url = this.getNodeWebhookUrl('default') as string;
 				const events = splitCsv(this.getNodeParameter('events', 'message') as string);
 				const secret = this.getNodeParameter('secret', '') as string;
+				const tag = nodeTag.call(this);
 				const cfg = await getConfig.call(this);
-				cfg.webhooks = (cfg.webhooks || []).filter((w) => w.url !== url);
-				const wh: IDataObject = { url, events: events.length ? events : ['*'] };
+				// remove entradas antigas deste mesmo node (ex.: URL de teste) e a URL atual
+				cfg.webhooks = (cfg.webhooks || []).filter((w) => w._n8n !== tag && w.url !== url);
+				const wh: IDataObject = { url, events: events.length ? events : ['*'], _n8n: tag };
 				if (secret) wh.hmac = { secret };
 				cfg.webhooks.push(wh);
 				await putConfig.call(this, cfg);
@@ -73,9 +83,10 @@ export class WaGatewayTrigger implements INodeType {
 			async delete(this: IHookFunctions): Promise<boolean> {
 				if (!(this.getNodeParameter('autoRegister', true) as boolean)) return true;
 				const url = this.getNodeWebhookUrl('default') as string;
+				const tag = nodeTag.call(this);
 				try {
 					const cfg = await getConfig.call(this);
-					cfg.webhooks = (cfg.webhooks || []).filter((w) => w.url !== url);
+					cfg.webhooks = (cfg.webhooks || []).filter((w) => w._n8n !== tag && w.url !== url);
 					await putConfig.call(this, cfg);
 				} catch {
 					/* sessão pode nem existir mais */
@@ -114,6 +125,13 @@ export class WaGatewayTrigger implements INodeType {
 
 /* ---------- helpers de config da sessão ---------- */
 type Cfg = { webhooks?: IDataObject[] } & IDataObject;
+
+/** marca estável para achar as entradas deste node ao ativar/desativar */
+function nodeTag(this: IHookFunctions): string {
+	const wf = (this.getWorkflow?.() as { id?: string } | undefined)?.id ?? 'wf';
+	const node = this.getNode?.()?.name ?? 'node';
+	return `n8n:${wf}:${node}`;
+}
 
 async function base(this: IHookFunctions): Promise<string> {
 	const creds = await this.getCredentials('waGatewayApi');
