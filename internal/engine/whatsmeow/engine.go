@@ -369,7 +369,7 @@ func (e *Engine) attachMedia(p map[string]any, ev *waEvents.Message) {
 		p["media"] = map[string]any{"error": "download: " + err.Error()}
 		return
 	}
-	mime := mediaMime(ev.Message)
+	mime := mediaMime(unwrapMessage(ev.Message))
 	url, size, err := e.deps.Media.Store(ctx, e.deps.Session, ev.Info.ID, mime, data)
 	if err != nil {
 		p["media"] = map[string]any{"error": "store: " + err.Error()}

@@ -20,6 +20,7 @@ func normalizeMessage(evt *waEvents.Message, includeRaw bool) map[string]any {
 		chat = preferPN(info.Chat, pickAlt(info))
 	}
 
+	msg = unwrapMessage(msg) // efêmera / view-once / doc-com-legenda / edição
 	kind, body := classifyMessage(msg)
 
 	out := map[string]any{
@@ -159,6 +160,31 @@ func mediaMime(m *waProto.Message) string {
 	default:
 		return ""
 	}
+}
+
+// unwrapMessage desembrulha os invólucros comuns do WhatsApp (mensagens
+// efêmeras/"apagam sozinhas", ver-uma-vez, documento-com-legenda) e chega no
+// conteúdo real. Sem isso, esses casos caem em type="unknown".
+func unwrapMessage(m *waProto.Message) *waProto.Message {
+	for i := 0; m != nil && i < 5; i++ {
+		switch {
+		case m.GetEphemeralMessage().GetMessage() != nil:
+			m = m.GetEphemeralMessage().GetMessage()
+		case m.GetViewOnceMessage().GetMessage() != nil:
+			m = m.GetViewOnceMessage().GetMessage()
+		case m.GetViewOnceMessageV2().GetMessage() != nil:
+			m = m.GetViewOnceMessageV2().GetMessage()
+		case m.GetViewOnceMessageV2Extension().GetMessage() != nil:
+			m = m.GetViewOnceMessageV2Extension().GetMessage()
+		case m.GetDocumentWithCaptionMessage().GetMessage() != nil:
+			m = m.GetDocumentWithCaptionMessage().GetMessage()
+		case m.GetProtocolMessage().GetEditedMessage() != nil:
+			m = m.GetProtocolMessage().GetEditedMessage()
+		default:
+			return m
+		}
+	}
+	return m
 }
 
 func classifyMessage(m *waProto.Message) (kind, body string) {
