@@ -51,6 +51,30 @@ func (r *Redis) AcquireLock(ctx context.Context, key, val string, ttl time.Durat
 	return r.c.SetNX(ctx, key, val, ttl).Result()
 }
 
+// LockOwner devolve o valor atual do lock (ex.: o nodeID dono da sessão), ""
+// se ninguém segura.
+func (r *Redis) LockOwner(ctx context.Context, key string) (string, error) {
+	v, err := r.c.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	return v, err
+}
+
+// SetNodeAddr publica a URL HTTP alcançável deste nó (chave com TTL, renovada
+// pelo heartbeat). GetNodeAddr resolve nodeID → URL.
+func (r *Redis) SetNodeAddr(ctx context.Context, nodeID, url string, ttl time.Duration) error {
+	return r.c.Set(ctx, "wa:node:addr:"+nodeID, url, ttl).Err()
+}
+
+func (r *Redis) GetNodeAddr(ctx context.Context, nodeID string) (string, error) {
+	v, err := r.c.Get(ctx, "wa:node:addr:"+nodeID).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	return v, err
+}
+
 func (r *Redis) RenewLock(ctx context.Context, key, val string, ttl time.Duration) (bool, error) {
 	res, err := renewScript.Run(ctx, r.c, []string{key}, val, ttl.Milliseconds()).Int64()
 	return res == 1, err
@@ -141,6 +165,13 @@ func (r *Redis) Heartbeat(ctx context.Context, key, node string, ttl time.Durati
 		return 1, err
 	}
 	return int(card.Val()), nil
+}
+
+// ActiveNodes devolve os membros do sorted set `key` vistos nos últimos `ttl`
+// (nós vivos, pelo heartbeat).
+func (r *Redis) ActiveNodes(ctx context.Context, key string, ttl time.Duration) ([]string, error) {
+	min := strconv.FormatInt(time.Now().Add(-ttl).UnixMilli(), 10)
+	return r.c.ZRangeByScore(ctx, key, &redis.ZRangeBy{Min: min, Max: "+inf"}).Result()
 }
 
 // ---- pub/sub ----

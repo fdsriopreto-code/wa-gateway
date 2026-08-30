@@ -89,6 +89,8 @@ var specEndpoints = []ep{
 	{"GET", "/api/media/{id}", "Monitor", "Baixar/stream de mídia guardada", nil, []string{"redirect?"}},
 	{"GET", "/api/stats", "Monitor", "Estatísticas", nil, nil},
 
+	{"GET", "/api/cluster", "Admin", "Info do nó e nós vivos (multi-nó)", nil, nil},
+
 	// ---- mcp
 	{"POST", "/mcp", "MCP", "Endpoint MCP (JSON-RPC 2.0) para agentes de IA. Métodos: initialize, tools/list, tools/call.", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, nil},
 

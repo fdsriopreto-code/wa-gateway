@@ -1,6 +1,9 @@
 package httpapi
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+)
 
 func (d Deps) redisOK(r *http.Request) bool {
 	if d.Cache == nil {
@@ -44,4 +47,21 @@ func (d Deps) version(w http.ResponseWriter, r *http.Request) {
 		"version": d.Version,
 		"commit":  d.Commit,
 	})
+}
+
+// cluster: info do nó atual + nós vivos vistos pelo heartbeat.
+func (d Deps) cluster(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{
+		"nodeId":         d.Manager.NodeID(),
+		"routingEnabled": d.Manager.ClusterEnabled(),
+		"advertiseUrl":   d.Manager.AdvertiseURL(),
+		"localSessions":  d.Manager.LocalSessions(),
+	}
+	if d.Cache != nil {
+		if nodes, err := d.Cache.ActiveNodes(r.Context(), "wa:ws:nodes", 25*time.Second); err == nil {
+			out["nodes"] = nodes
+			out["nodeCount"] = len(nodes)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }

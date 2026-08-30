@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +44,7 @@ type Manager struct {
 	log           *slog.Logger
 	dsn           string
 	nodeID        string
+	advertiseURL  string // URL HTTP deste nó p/ roteamento entre nós ("" = off)
 	defaultEngine string
 	media         engine.MediaSink
 
@@ -63,6 +65,70 @@ func NewManager(st *store.Store, rc *cache.Redis, bus *events.Bus, log *slog.Log
 		dsn: dsn, nodeID: nodeID, defaultEngine: defaultEngine, media: media,
 		running: make(map[string]*handle),
 	}
+}
+
+// SetAdvertiseURL liga o roteamento entre nós: outros nós encaminham requests
+// de sessões deste nó para esta URL. Vazio = roteamento desligado.
+func (m *Manager) SetAdvertiseURL(u string) { m.advertiseURL = strings.TrimRight(u, "/") }
+
+// ClusterEnabled diz se o roteamento entre nós está ligado (advertiseURL set).
+func (m *Manager) ClusterEnabled() bool { return m.advertiseURL != "" }
+
+// NodeID / AdvertiseURL — usados pelo endpoint /api/cluster.
+func (m *Manager) NodeID() string       { return m.nodeID }
+func (m *Manager) AdvertiseURL() string { return m.advertiseURL }
+
+// LocalSessions lista os nomes das sessões vivas neste nó.
+func (m *Manager) LocalSessions() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]string, 0, len(m.running))
+	for n := range m.running {
+		out = append(out, n)
+	}
+	return out
+}
+
+// ClusterHeartbeat publica periodicamente o endereço deste nó no Redis
+// (nodeID → advertiseURL) para o roteamento entre nós. No-op sem advertiseURL.
+func (m *Manager) ClusterHeartbeat(ctx context.Context) {
+	if m.advertiseURL == "" || m.cache == nil {
+		return
+	}
+	pub := func() {
+		c, cancel := context.WithTimeout(ctx, 3*time.Second)
+		_ = m.cache.SetNodeAddr(c, m.nodeID, m.advertiseURL, 30*time.Second)
+		cancel()
+	}
+	pub()
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			pub()
+		}
+	}
+}
+
+// OwnerBaseURL devolve a URL do nó que hoje é dono da sessão `name`, e se ele
+// é OUTRO nó (ok=true → vale encaminhar). "" quando ninguém é dono, é este
+// nó, ou o dono não publicou endereço.
+func (m *Manager) OwnerBaseURL(ctx context.Context, name string) (url string, remote bool) {
+	if m.cache == nil {
+		return "", false
+	}
+	owner, err := m.cache.LockOwner(ctx, lockKey(name))
+	if err != nil || owner == "" || owner == m.nodeID {
+		return "", false
+	}
+	addr, err := m.cache.GetNodeAddr(ctx, owner)
+	if err != nil || addr == "" {
+		return "", false
+	}
+	return strings.TrimRight(addr, "/"), true
 }
 
 // sessionConfig le sessions.config com cache curto (10s).

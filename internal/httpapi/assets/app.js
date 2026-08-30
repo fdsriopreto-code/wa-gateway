@@ -94,7 +94,9 @@ async function api(method, path, body){
   const text=await res.text();
   let data=null; try{data=text?JSON.parse(text):null;}catch{data=text;}
   if(!res.ok){
-    const e=new Error((data&&(data.message||data.error))||res.statusText||("HTTP "+res.status));
+    let msg=(data&&(data.message||data.error))||res.statusText||("HTTP "+res.status);
+    if(res.status===429){const ra=res.headers.get("Retry-After");msg="muitas requisições — tente de novo"+(ra?` em ${ra}s`:" em instantes");}
+    const e=new Error(msg);
     e.status=res.status; e.data=data; e.ms=ms; throw e;
   }
   return {data,ms,status:res.status};
@@ -1052,7 +1054,32 @@ views.events={title:"Eventos ao vivo",async render(root){
 views.monitor={title:"Monitoramento",async render(root){
   await loadSessions();
   const page=h("div",{class:"page"}); root.append(page);
-  page.append(h("div",{class:"page-head"},h("div",{},h("h2",{},"Monitoramento"),h("p",{},"Fila de saída e entregas de webhook, por sessão."))));
+  page.append(h("div",{class:"page-head"},h("div",{},h("h2",{},"Monitoramento"),h("p",{},"Infra, fila de saída e entregas de webhook."))));
+
+  // --- card de infra / nós ---
+  const infra=h("div",{class:"card pad",style:"margin-bottom:14px"});
+  infra.append(skeleton("row",2));
+  page.append(infra);
+  (async()=>{
+    try{
+      const [cl,hh]=await Promise.all([apiData("GET","/api/cluster"),apiData("GET","/health").catch(()=>null)]);
+      clear(infra);
+      const dot=(ok)=>h("span",{class:"dot "+(ok?"ok":"bad"),style:"display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px"});
+      infra.append(
+        h("div",{class:"between",style:"flex-wrap:wrap;gap:10px"},
+          h("div",{},h("div",{class:"muted",style:"font-size:11px"},"este nó"),h("div",{class:"mono"},cl.nodeId||"—")),
+          h("div",{},h("div",{class:"muted",style:"font-size:11px"},"roteamento entre nós"),
+            h("div",{},cl.routingEnabled?badge("on"):badge("off"),cl.advertiseUrl?h("span",{class:"mono muted",style:"margin-left:6px"},trunc(cl.advertiseUrl,34)):null)),
+          h("div",{},h("div",{class:"muted",style:"font-size:11px"},"nós vivos"),h("div",{},String(cl.nodeCount??1))),
+          hh?h("div",{},h("div",{class:"muted",style:"font-size:11px"},"infra"),
+            h("div",{},dot(hh.database)," Postgres  ",dot(hh.redis)," Redis")):null),
+        (cl.localSessions&&cl.localSessions.length)?h("div",{class:"muted",style:"margin-top:10px;font-size:12px"},
+          "sessões neste nó: ",h("span",{class:"mono"},cl.localSessions.join(", "))):null,
+        (cl.nodes&&cl.nodes.length>1)?h("div",{class:"muted",style:"margin-top:6px;font-size:12px"},
+          "cluster: ",h("span",{class:"mono"},cl.nodes.join("  ·  "))):null);
+    }catch(e){clear(infra);infra.append(h("p",{class:"hint"},"infra: "+e.message));}
+  })();
+
   const sel=sessionSelect("m-sess");
   const auto=h("input",{type:"checkbox"});
   const tabsEl=h("div",{class:"tabs"}); const box=h("div",{});

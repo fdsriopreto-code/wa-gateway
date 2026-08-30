@@ -56,6 +56,10 @@ Atualizado em **2026-08-30**.
   + `X-RateLimit-*`; `RATE_LIMIT_RPS` (default 20), chave-mestra isenta.
 - **WS multi-nó com heartbeat** — só propaga eventos via Redis pub/sub quando
   há >1 nó vivo (`wa:ws:nodes`); com 1 réplica, tráfego pub/sub = zero.
+- **Roteamento de request entre nós** (`NODE_ADVERTISE_URL`) — request que
+  chega no nó errado é encaminhado pro dono da sessão (reverse-proxy via
+  `wa:lock:<s>` → `wa:node:addr:<id>`). Off por padrão. `GET /api/cluster`
+  mostra o estado. Console → Monitoramento tem card de infra/nós.
 - CI completo + release automático do node n8n por tag.
 
 ---
@@ -64,7 +68,6 @@ Atualizado em **2026-08-30**.
 
 | Item | Por quê | Esboço |
 |---|---|---|
-| **Roteamento de request entre nós** | hoje `POST` numa sessão de outro nó → 409 | o nó que recebe consulta o lock (`wa:lock:<s>` guarda o `nodeID`) e faz *reverse-proxy* pro dono; ou expõe o mapa sessão→nó pro LB |
 | **Reenvio manual de webhook** | `POST /api/deliveries/{id}/retry` | precisa guardar o `deliverPayload` (body+secret) numa coluna `jsonb` — migração |
 | **Métricas de negócio** | msgs enviadas/recebidas por sessão, lag da fila | contadores Prometheus com label `session` |
 | **Labels do WhatsApp Business** | eventos `label.*` já chegam, falta expor | `GET /api/{s}/labels`, associar/desassociar em chat/mensagem |

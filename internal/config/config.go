@@ -61,6 +61,11 @@ type Config struct {
 	LogLevel  string
 	LogFormat string
 	NodeID    string
+
+	// NodeAdvertiseURL: URL HTTP alcançável deste nó pelos outros nós. Setado
+	// = liga o roteamento de request entre nós (uma sessão vive num nó só;
+	// requests que chegam noutro são encaminhados pro dono). Vazio = off.
+	NodeAdvertiseURL string
 }
 
 func Load() (Config, error) {
@@ -94,6 +99,7 @@ func Load() (Config, error) {
 		LogLevel:           env("LOG_LEVEL", "info"),
 		LogFormat:          env("LOG_FORMAT", "text"),
 		NodeID:             env("NODE_ID", ""),
+		NodeAdvertiseURL:   strings.TrimRight(env("NODE_ADVERTISE_URL", ""), "/"),
 	}
 
 	if c.DatabaseURL == "" {

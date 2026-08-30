@@ -237,10 +237,16 @@ sequenceDiagram
   locais. Pula o próprio nó. **Só publica se houver >1 nó vivo** — cada nó faz
   heartbeat num sorted set `wa:ws:nodes` (a cada 8s, TTL 25s); com 1 réplica o
   tráfego pub/sub é zero.
-- **Ainda não há roteamento de request entre nós:** um `POST /api/sendText`
-  para uma sessão que vive no nó B, batendo no nó A, responde 409 `not_active`.
-  Cliente deve fixar o nó (sticky) ou o load balancer roteia por `session`.
-  → ver [ROADMAP](ROADMAP.md).
+- **Roteamento de request entre nós** (`clusterProxyMW`, opcional): com
+  `NODE_ADVERTISE_URL` setado, cada nó publica seu endereço no Redis
+  (`wa:node:addr:<id>`, TTL 30s, heartbeat 10s). Um request para uma sessão
+  que não está viva localmente é **encaminhado** (reverse-proxy) para o nó
+  dono — resolvido via `wa:lock:<sessão>` (guarda o `nodeID`). Header
+  `X-WA-Forwarded: 1` corta loop. Sem `NODE_ADVERTISE_URL` o middleware é um
+  passa-direto (1 `if`). O nome da sessão sai do path param, da query
+  `?session=` ou do corpo JSON (`{"session": …}` — com buffer+restore).
+  `/ws` é isento (o `Hub` já faz fan-out entre nós).
+- `GET /api/cluster` — nó atual, `routingEnabled`, nós vivos, sessões locais.
 
 ---
 
@@ -266,7 +272,8 @@ Tudo por env var. Padrões entre `()`.
 | `ACCESS_LOG` (`false`) | log de acesso HTTP |
 | `RATE_LIMIT_RPS` (`20`) / `RATE_LIMIT_BURST` (`0`→2×RPS, mín 10) | token bucket por chave de API (Redis). `0` desliga. Chave-mestra isenta. `429` + `Retry-After` |
 | `LOG_LEVEL` (`info`) / `LOG_FORMAT` (`text`/`json`) | logger |
-| `NODE_ID` | id do nó (multi-nó); vazio = hostname |
+| `NODE_ID` | id do nó (multi-nó); vazio = `hostname-pid` |
+| `NODE_ADVERTISE_URL` | URL HTTP deste nó p/ os outros. Setado = liga roteamento de request entre nós. Vazio = off |
 
 Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
 
@@ -325,8 +332,8 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
 - **Histórico:** `GET /api/chats`, `/api/chats/{chatId}/messages?before=`,
   `/api/messages/{id}/download`, `POST /api/{s}/media/download` (usa `mediaMeta`
   do evento — sem depender do store).
-- **Admin/observabilidade:** `/api/stats`, `/api/deliveries`, `/api/keys`
-  (GET/POST/DELETE), `/metrics`.
+- **Admin/observabilidade:** `/api/stats`, `/api/cluster`, `/api/deliveries`,
+  `/api/keys` (GET/POST/DELETE), `/metrics`.
 - **MCP:** `POST /mcp` — ver [MCP.md](MCP.md).
 
 ---
@@ -377,5 +384,5 @@ Ver **[ROADMAP.md](ROADMAP.md)** para a lista completa com plano. Resumo:
 
 - **Botões / listas interativas:** não são confiáveis via whatsmeow (protocolo
   não-oficial). Alternativa: enquetes (`sendPoll`) ou menu numérico em texto.
-- Sem roteamento de request entre nós (sticky por sessão no LB).
 - Labels do WhatsApp Business não expostas (eventos passam como `label.*`).
+- Reenvio manual de webhook ainda não (falta guardar o body da entrega).

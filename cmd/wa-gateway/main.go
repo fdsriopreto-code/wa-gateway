@@ -119,6 +119,11 @@ func run() error {
 	// ---- sessoes ----
 	mgr := session.NewManager(st, rc, bus, log, cfg.DatabaseURL, cfg.NodeID, cfg.DefaultEngine,
 		media.NewSink(mediaStore, st))
+	if cfg.NodeAdvertiseURL != "" {
+		mgr.SetAdvertiseURL(cfg.NodeAdvertiseURL)
+		go mgr.ClusterHeartbeat(ctx)
+		log.Info("roteamento entre nós: on", "advertise", cfg.NodeAdvertiseURL)
+	}
 
 	// ---- fila de saida (pacing anti-ban) ----
 	outQueue := outbox.NewQueue(asynqClient, rc, outbox.Defaults{Pace: outbox.Pace{

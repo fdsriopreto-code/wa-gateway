@@ -34,6 +34,7 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 	// autenticado
 	r.Group(func(r chi.Router) {
 		r.Use(authn.Middleware)
+		r.Use(clusterProxyMW(d.Manager, d.Log))
 		if d.Cache != nil && d.RateRPS > 0 {
 			burst := d.RateBurst
 			if burst <= 0 {
@@ -77,6 +78,7 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 
 		// --- dashboard / auditoria ---
 		r.Get("/api/stats", d.stats)
+		r.Get("/api/cluster", d.cluster)
 		r.Get("/api/deliveries", d.listDeliveries)
 		r.Route("/api/keys", func(r chi.Router) {
 			r.Get("/", d.listKeys)
