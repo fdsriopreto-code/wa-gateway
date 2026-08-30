@@ -5,11 +5,14 @@ package webhook
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,10 +131,19 @@ func (d *Dispatcher) handle(ctx context.Context, e events.Event) {
 	if !ok {
 		return
 	}
+	// dedupe por destino: se a sessao tiver duas entradas apontando pro mesmo
+	// URL (ex.: URL de teste e de producao do n8n, ou entrada duplicada), o
+	// evento sai uma vez so por URL.
+	seen := make(map[string]struct{}, len(webhooks))
 	for _, wh := range webhooks {
 		if wh.URL == "" || !events.MatchAny(wh.Events, e.Name) {
 			continue
 		}
+		norm := strings.TrimRight(wh.URL, "/")
+		if _, dup := seen[norm]; dup {
+			continue
+		}
+		seen[norm] = struct{}{}
 		d.enqueue(ctx, e, metadata, wh)
 	}
 }
@@ -173,7 +185,7 @@ func (d *Dispatcher) enqueue(ctx context.Context, e events.Event, metadata map[s
 		asynq.Queue("webhook"),
 		asynq.Retention(24*time.Hour),
 	)
-	if _, err := d.client.EnqueueContext(ctx, task, asynq.TaskID(e.ID+"|"+shortURL(wh.URL))); err != nil {
+	if _, err := d.client.EnqueueContext(ctx, task, asynq.TaskID(e.ID+"|"+urlKey(wh.URL))); err != nil {
 		// TaskID duplicado = evento ja enfileirado; ignora.
 		if err != asynq.ErrDuplicateTask && err != asynq.ErrTaskIDConflict {
 			d.log.Error("enqueue webhook", "err", err)
@@ -227,9 +239,10 @@ func (d *Dispatcher) Handler() asynq.HandlerFunc {
 	}
 }
 
-func shortURL(u string) string {
-	if len(u) > 64 {
-		return u[:64]
-	}
-	return u
+// urlKey e um identificador curto e estavel do URL, usado no TaskID de
+// deduplicacao do asynq. Hash (nao truncamento) pra dois URLs distintos
+// nunca colidirem e derrubarem uma entrega legitima.
+func urlKey(u string) string {
+	sum := sha1.Sum([]byte(u))
+	return hex.EncodeToString(sum[:8])
 }

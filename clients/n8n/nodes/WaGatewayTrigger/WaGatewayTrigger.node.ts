@@ -85,7 +85,10 @@ export class WaGatewayTrigger implements INodeType {
 				const secret = this.getNodeParameter('secret', '') as string;
 				const tag = nodeTag.call(this);
 				const cfg = await getConfig.call(this);
-				cfg.webhooks = (cfg.webhooks || []).filter((w) => w._n8n !== tag && w.url !== url);
+				// tira a própria tag e QUALQUER variante desta URL (teste↔produção)
+				// pra não ficar registrado 2x e o gateway disparar 2 execuções.
+				const variants = urlVariants(url);
+				cfg.webhooks = (cfg.webhooks || []).filter((w) => w._n8n !== tag && !variants.includes(String(w.url)));
 				const wh: IDataObject = { url, events: events.length ? events : ['*'], _n8n: tag };
 				if (secret) wh.hmac = { secret };
 				cfg.webhooks.push(wh);
@@ -96,9 +99,10 @@ export class WaGatewayTrigger implements INodeType {
 				if (!(this.getNodeParameter('autoRegister', true) as boolean)) return true;
 				const url = this.getNodeWebhookUrl('default') as string;
 				const tag = nodeTag.call(this);
+				const variants = urlVariants(url);
 				try {
 					const cfg = await getConfig.call(this);
-					cfg.webhooks = (cfg.webhooks || []).filter((w) => w._n8n !== tag && w.url !== url);
+					cfg.webhooks = (cfg.webhooks || []).filter((w) => w._n8n !== tag && !variants.includes(String(w.url)));
 					await putConfig.call(this, cfg);
 				} catch {
 					/* sessão pode nem existir mais */
@@ -211,4 +215,10 @@ async function putConfig(this: IHookFunctions, cfg: Cfg): Promise<void> {
 }
 function splitCsv(s: string): string[] {
 	return (s || '').split(',').map((x) => x.trim()).filter(Boolean);
+}
+/** as duas formas da URL de webhook do n8n: produção e teste. */
+function urlVariants(url: string): string[] {
+	const prod = url.replace('/webhook-test/', '/webhook/');
+	const test = url.replace('/webhook/', '/webhook-test/');
+	return Array.from(new Set([url, prod, test]));
 }
