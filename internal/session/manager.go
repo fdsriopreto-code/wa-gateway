@@ -48,6 +48,8 @@ type Manager struct {
 	defaultEngine string
 	media         engine.MediaSink
 
+	evStream *events.Stream // log duravel; nil = só barramento in-process
+
 	mu      sync.RWMutex
 	running map[string]*handle
 
@@ -70,6 +72,10 @@ func NewManager(st *store.Store, rc *cache.Redis, bus *events.Bus, log *slog.Log
 // SetAdvertiseURL liga o roteamento entre nós: outros nós encaminham requests
 // de sessões deste nó para esta URL. Vazio = roteamento desligado.
 func (m *Manager) SetAdvertiseURL(u string) { m.advertiseURL = strings.TrimRight(u, "/") }
+
+// SetEventStream liga o log durável: todo evento emitido também é gravado no
+// Redis Stream (webhook/inbox consomem de lá, com replay).
+func (m *Manager) SetEventStream(s *events.Stream) { m.evStream = s }
 
 // ClusterEnabled diz se o roteamento entre nós está ligado (advertiseURL set).
 func (m *Manager) ClusterEnabled() bool { return m.advertiseURL != "" }
@@ -399,7 +405,8 @@ func (m *Manager) emit(name, engName string) func(events.Event) {
 			e.Engine = engName
 		}
 		observability.EventsPublished.WithLabelValues(e.Name).Inc()
-		m.bus.Publish(e)
+		m.bus.Publish(e)     // in-process: WS (best-effort)
+		m.evStream.Append(e) // Redis Stream: webhook + inbox (durável); nil-safe
 
 		switch e.Name {
 		case "message":

@@ -36,10 +36,12 @@ flowchart LR
 
   API --> SESS --> ENG
   API -->|enfileira| OUT --> SESS
-  ENG -->|eventos| BUS
-  BUS --> DISP
-  BUS --> INBOX
+  ENG -->|eventos| EMIT[Manager.emit]
+  EMIT -->|in-process| BUS
+  EMIT -->|Redis Stream| STREAM[(wa:events)]
   BUS --> HUB
+  STREAM --> DISP
+  STREAM --> INBOX
 
   ENG <-->|Web MD protocol| WA[(WhatsApp)]
   DISP -->|asynq| REDIS[(Redis)]
@@ -51,8 +53,8 @@ flowchart LR
 ```
 
 **Fonte da verdade:** PostgreSQL. **Redis:** cache, locks de posse de sessão,
-filas duráveis (asynq), pub/sub de WebSocket. **Um binário** — o console web é
-embutido via `//go:embed`.
+filas duráveis (asynq), **log durável de eventos** (Redis Stream `wa:events`),
+pub/sub de WebSocket. **Um binário** — o console web é embutido via `//go:embed`.
 
 ---
 
@@ -216,20 +218,30 @@ sequenceDiagram
   `session.qr`, etc.
 - **Mídia é assíncrona:** um pool de 4 workers tira o `DownloadAny`+`Store` do
   caminho crítico do handler do whatsmeow (rajada de mídia não atrasa os textos).
-- **`events.Bus`**: publish sem lock (snapshot atômico das inscrições).
-  `Subscribe` = best-effort (canal cheio → descarta na hora, contador
-  `BusDropped`) — usado pelo WS. `SubscribeReliable(…, maxWait)` espera até
-  `maxWait` (250ms) o canal abrir antes de descartar — usado por **webhook**
-  e **inbox**, onde perder evento é grave. A garantia real de entrega ainda
-  é das filas asynq; o `maxWait` só reduz drop sob pico.
-- **`webhook.Dispatcher`**: pool de 6 workers, cache de config por sessão
-  (TTL 5s), dedupe de entrega por URL, `TaskID` = `eventID|sha1(url)` (asynq
-  não duplica). Assinatura: `X-Webhook-Signature: sha256=<hmac>`. O payload
-  completo fica em `webhook_deliveries.payload` → `POST /api/deliveries/{id}/
-  retry` reenfileira (sem TaskID fixo).
-- **`inbox`**: pool de 4 workers → `store.SaveMessage` / `SaveChat` /
-  `UpdateAck`. Extrai `mediaMeta` (directPath/mediaKey/sha…) pra permitir
-  download posterior sem depender do store.
+- **Dois caminhos de evento** (`Manager.emit` escreve nos dois):
+  - **`events.Bus`** (in-process): publish sem lock (snapshot atômico).
+    Best-effort — canal cheio descarta (contador `BusDropped`). Só o **WS**
+    usa; perder um frame de WS é aceitável.
+  - **`events.Stream`** (Redis Stream `wa:events`, `MAXLEN ~100k`): log
+    durável. `Append` enfileira num buffer e um goroutine faz `XADD`.
+    **webhook** e **inbox** consomem via `Consume` (consumer group + `XACK`
+    só no sucesso + `XAUTOCLAIM` de pendências >60s). Efeitos:
+    - crash no meio de um dispatch → o evento fica pendente → reprocessado
+      (por este nó ou por outro do mesmo grupo);
+    - **cada evento processado uma vez pelo cluster** (o group distribui);
+    - webhook: `deliveryID = eventID|sha1(url)` = TaskID do asynq →
+      reprocessar não duplica entrega;
+    - inbox: `SaveMessage` falhou → evento pendente → retry (o payload
+      já round-trip por JSON; `bytesOf`/`i64` lidam com isso).
+- **`webhook.Dispatcher`**: consumidor do stream (grupo `webhook`, até 8 em
+  paralelo), cache de config por sessão (TTL 5s), dedupe de entrega por URL.
+  Cada webhook vira uma task asynq (`TaskID = deliveryID`, retry exponencial,
+  HMAC `X-Webhook-Signature: sha256=<hmac>`, headers `X-Webhook-Id` = evento /
+  `X-Delivery-Id` = evento+URL). O payload fica em `webhook_deliveries.payload`
+  → `POST /api/deliveries/{id}/retry` reenfileira.
+- **`inbox`**: consumidor do stream (grupo `inbox`, `message.*`, até 4 em
+  paralelo) → `store.SaveMessage` / `SaveChat` / `UpdateAck`. Extrai
+  `mediaMeta` (directPath/mediaKey/sha…) pra permitir download posterior.
 
 ---
 
@@ -237,6 +249,9 @@ sequenceDiagram
 
 - **Posse por lock (Redis):** cada sessão viva num nó só. `start` num nó que não
   tem a sessão e cujo lock está com outro → `ErrLocked`.
+- **Eventos:** todo nó escreve no mesmo Redis Stream `wa:events`. Os grupos
+  `webhook` / `inbox` distribuem o processamento entre os nós — cada evento
+  cai em **um** nó, e se esse nó morre no meio, outro reclama a pendência.
 - **WebSocket:** `ws.Hub` publica cada evento local no canal Redis `wa:ws`
   (frame `nodeID\x00json`); os outros nós recebem e entregam aos clientes WS
   locais. Pula o próprio nó. **Só publica se houver >1 nó vivo** — cada nó faz
@@ -375,8 +390,9 @@ num `init()`, importa com blank import no `main.go`. `DEFAULT_ENGINE` ou
 
 ## 11. Testes & CI
 
-- `go test ./...` — pacotes com teste: `config`, `engine/whatsmeow`, `events`,
-  `httpapi`, `outbox`, `session`, `webhook`.
+- `go test ./...` — pacotes com teste: `config`, `engine/whatsmeow`, `events`
+  (inclui o Redis Stream com `miniredis`), `httpapi`, `outbox`, `session`,
+  `webhook`.
 - CI (`.github/workflows/ci.yml`): gofmt, vet, build estático (`CGO_ENABLED=0`),
   test, `node --check` no `app.js`, build do node n8n, `docker build`.
 - Release do node n8n: tag `n8n-v*` → `release-n8n.yml` publica no npm.

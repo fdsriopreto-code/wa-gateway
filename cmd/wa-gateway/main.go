@@ -79,16 +79,17 @@ func run() error {
 		return err
 	}
 
-	// ---- barramento interno ----
+	// ---- barramento interno (WS) + log durável (webhook/inbox) ----
 	bus := events.NewBus(log)
 	bus.OnPublish = func(name string) { observability.EventsPublished.WithLabelValues(name).Inc() }
 	bus.OnDrop = func(sub string) { observability.BusDropped.WithLabelValues(sub).Inc() }
+	evStream := events.NewStream(rc.Raw(), log)
 
 	// ---- fila / webhooks ----
 	asynqClient := asynq.NewClient(redisOpt)
 	defer asynqClient.Close()
 
-	dispatcher := webhook.NewDispatcher(st, asynqClient, log, cfg.WebhookTimeout, cfg.WebhookMaxAttempts)
+	dispatcher := webhook.NewDispatcher(st, asynqClient, log, cfg.WebhookTimeout, cfg.WebhookMaxAttempts, cfg.NodeID)
 
 	// ---- armazenamento de midia (opcional) ----
 	// Falha de conexao com o S3/MinIO NAO derruba o app: degrada para "sem
@@ -119,6 +120,7 @@ func run() error {
 	// ---- sessoes ----
 	mgr := session.NewManager(st, rc, bus, log, cfg.DatabaseURL, cfg.NodeID, cfg.DefaultEngine,
 		media.NewSink(mediaStore, st))
+	mgr.SetEventStream(evStream)
 	if cfg.NodeAdvertiseURL != "" {
 		mgr.SetAdvertiseURL(cfg.NodeAdvertiseURL)
 		go mgr.ClusterHeartbeat(ctx)
@@ -149,11 +151,11 @@ func run() error {
 	// ---- websocket ----
 	hub := ws.NewHub(log, rc, cfg.NodeID)
 
-	// ---- consumidores do barramento ----
-	go dispatcher.Run(ctx, bus)
-	go hub.Run(ctx, bus)
+	// ---- consumidores ----
+	go dispatcher.Run(ctx, evStream) // webhook: consumer group no Redis Stream
+	go hub.Run(ctx, bus)             // WS: barramento in-process (best-effort)
 	if cfg.MessageStore {
-		go inbox.New(st, log).Run(ctx, bus)
+		go inbox.New(st, log, cfg.NodeID).Run(ctx, evStream)
 		log.Info("persistencia de mensagens: on")
 	}
 	go mgr.RestoreOwned(ctx)

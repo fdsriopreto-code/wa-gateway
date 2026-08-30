@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"log/slog"
-	"sync"
 	"time"
 
 	"wa-gateway/internal/engine"
@@ -17,71 +16,43 @@ import (
 )
 
 type Consumer struct {
-	db  *store.Store
-	log *slog.Logger
+	db     *store.Store
+	log    *slog.Logger
+	nodeID string
 }
 
-func New(db *store.Store, log *slog.Logger) *Consumer { return &Consumer{db: db, log: log} }
-
-// Run consome message.* ate o contexto ser cancelado. Usa um pool pequeno
-// para que a latencia do Postgres nao serialize a ingestao.
-func (c *Consumer) Run(ctx context.Context, bus *events.Bus) {
-	ch, cancel := bus.SubscribeReliable("inbox", "message.*", 8192, 250*time.Millisecond)
-	defer cancel()
-
-	const workers = 4
-	work := make(chan events.Event, 1024)
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for e := range work {
-				c.handle(ctx, e)
-			}
-		}()
-	}
-	defer func() { close(work); wg.Wait() }()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case e, ok := <-ch:
-			if !ok {
-				return
-			}
-			select {
-			case work <- e:
-			default:
-				c.log.Warn("inbox: pool cheio, evento descartado", "event", e.Name)
-			}
-		}
-	}
+func New(db *store.Store, log *slog.Logger, nodeID string) *Consumer {
+	return &Consumer{db: db, log: log, nodeID: nodeID}
 }
 
-func (c *Consumer) handle(ctx context.Context, e events.Event) {
+// Run consome message.* do log duravel (Redis Stream, consumer group "inbox")
+// ate o contexto ser cancelado. XACK so no sucesso: falha do Postgres deixa
+// o evento pendente e ele e reprocessado.
+func (c *Consumer) Run(ctx context.Context, stream *events.Stream) {
+	stream.Consume(ctx, "inbox", c.nodeID, []string{"message.*"}, 4, c.handle)
+}
+
+func (c *Consumer) handle(ctx context.Context, e events.Event) error {
 	p, ok := e.Payload.(map[string]any)
 	if !ok {
-		return
+		return nil
 	}
 	switch e.Name {
 	case "message.any":
-		c.saveMessage(ctx, e.Session, p)
+		return c.saveMessage(ctx, e.Session, p)
 	case "message.ack":
 		ids := strSlice(p["ids"])
 		if len(ids) > 0 {
-			if err := c.db.UpdateAck(ctx, e.Session, ids, ackNum(str(p["type"]))); err != nil {
-				c.log.Warn("inbox: update ack", "err", err)
-			}
+			return c.db.UpdateAck(ctx, e.Session, ids, ackNum(str(p["type"])))
 		}
 	}
+	return nil
 }
 
-func (c *Consumer) saveMessage(ctx context.Context, session string, p map[string]any) {
+func (c *Consumer) saveMessage(ctx context.Context, session string, p map[string]any) error {
 	id := str(p["id"])
 	if id == "" {
-		return
+		return nil
 	}
 	rec := store.MessageRecord{
 		Session:   session,
@@ -110,15 +81,16 @@ func (c *Consumer) saveMessage(ctx context.Context, session string, p map[string
 
 	if err := c.db.SaveMessage(ctx, rec); err != nil {
 		c.log.Warn("inbox: save message", "err", err, "id", id)
-		return
+		return err // deixa pendente no stream -> reprocessa
 	}
 	name := ""
 	if !rec.FromMe {
 		name = rec.PushName
 	}
 	if err := c.db.SaveChat(ctx, session, rec.ChatJID, name, boolOf(p["isGroup"]), rec.Timestamp); err != nil {
-		c.log.Warn("inbox: save chat", "err", err)
+		c.log.Warn("inbox: save chat", "err", err) // secundário: não bloqueia o ack
 	}
+	return nil
 }
 
 func ackNum(t string) int {

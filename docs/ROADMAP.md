@@ -66,6 +66,11 @@ Atualizado em **2026-08-30**.
 - **Métricas de negócio** — `wa_messages_sent_total{session}` /
   `wa_messages_received_total{session}` no `/metrics` (via `Manager.emit`);
   `/api/stats.messages24h` (sent/received) → KPIs no dashboard.
+- **Log durável de eventos (Redis Stream)** — `events.Stream` (`wa:events`,
+  `MAXLEN ~100k`). webhook e inbox saíram do barramento in-process e passaram
+  a **consumer groups** com `XACK` só no sucesso + `XAUTOCLAIM`. Crash no meio
+  de um dispatch → evento reprocessa (mesmo nó ou outro do grupo). Fecha o
+  **risco #1** da análise anterior. Testes com `miniredis`.
 - CI completo + release automático do node n8n por tag.
 
 ---
@@ -125,7 +130,7 @@ Estado honesto depois do batch de escala/robustez.
 
 | # | Risco | Impacto | Mitigação atual | Fix de verdade |
 |---|---|---|---|---|
-| 1 | **Barramento é in-process.** `events.Bus` entrega por canal Go. `SubscribeReliable` espera 250ms, mas sob pico sustentado ainda descarta → webhook não enfileirado (sem retry) / mensagem não persistida. | perda silenciosa de evento em pico | `maxWait` 250ms + contador `wa_bus_dropped_total` + log a cada 100 | trocar o backbone por **Redis Stream** (`XADD`/`XREADGROUP`) — consumidores com ack, replay, sem drop. É o próximo grande item. |
+| 1 | ~~Barramento in-process descartava evento sob pico.~~ **RESOLVIDO** (commit do Redis Stream): webhook e inbox consomem de `wa:events` com `XACK`+`XAUTOCLAIM`. Resta um buffer de escrita de 8192 no `Stream.Append` que, se encher (Redis persistentemente lento), loga `event NAO duravel` e perde. | ~~perda silenciosa~~ agora só num cenário de Redis degradado | buffer 8192 + `XADD` com timeout 5s + log/contador | back-pressure no `Append` (bloquear o `emit` uns ms) ou escrita síncrona quando o buffer passa de X% |
 | 2 | **Cross-node buffra o corpo.** Com `NODE_ADVERTISE_URL` on, todo POST-JSON é lido inteiro (até 32MB) pra achar `session`. | latência/RAM em envio de mídia grande no modo multi-nó | só afeta multi-nó; single-node não paga nada | tokenizer streaming de JSON + `io.MultiReader` pra restaurar sem bufferizar tudo |
 | 3 | **Escopos de API key são grosseiros.** Quase tudo exige `*`. `listDeliveries`/`retryDelivery` não checam `canAdmin` e uma chave escopada consegue ver entrega de outra sessão. | vazamento entre tenants num cenário multi-cliente | modelo hoje é "1 chave = tudo" | escopos por sessão (`session:vendas:*`) + `Principal.Can` com match de prefixo |
 | 4 | **Sem dead-letter de webhook.** Depois de N tentativas o asynq desiste; a linha fica `failed` sem alerta. | entregas silenciosamente perdidas | botão "reenviar" manual no console | evento `webhook.exhausted` no próprio barramento + métrica |
@@ -146,7 +151,7 @@ Estado honesto depois do batch de escala/robustez.
 
 ### Ordem sugerida daqui
 
-1. **Redis Stream no barramento** (risco #1) — maior ganho de robustez.
+1. ~~Redis Stream no barramento~~ ✅ feito.
 2. **Escopos de API key por sessão** (risco #3) — destrava multi-tenant real.
 3. **Cifrar segredos** (risco #5) — barato, fecha uma auditoria.
 4. Labels Business · dead-letter de webhook · streaming do body no cross-node.
@@ -159,8 +164,10 @@ Estado honesto depois do batch de escala/robustez.
    importa o whatsmeow. Motor novo = implementação nova, zero mudança no resto.
 2. **`spec.go` é a fonte de verdade da API.** Endpoint sem linha lá não existe
    pro OpenAPI/docs — e o teste pega.
-3. **Barramento não garante entrega.** Durabilidade é das filas asynq. Assinante
-   novo que precise de garantia → fila própria, não só `bus.Match`.
+3. **Dois caminhos de evento.** `events.Bus` in-process = best-effort (WS).
+   `events.Stream` (Redis Stream) = durável, at-least-once (webhook, inbox).
+   Consumidor novo que precise de garantia → `stream.Consume` (consumer
+   group), não `bus.Subscribe`.
 4. **Config por sessão, não por deploy.** Qualquer comportamento novo de sessão
    entra em `session.Config` (JSONB), com default seguro.
 5. **Degradar, não crashar.** Dependência opcional (S3) fora do ar = log + segue.
