@@ -27,6 +27,11 @@ import (
 
 const TaskDeliver = "webhook:deliver"
 
+// EventExhausted é emitido no log de eventos quando uma entrega de webhook
+// esgota as tentativas — dead-letter observável (o próprio webhook pode
+// assiná-lo pra ser avisado).
+const EventExhausted = "webhook.exhausted"
+
 type deliverPayload struct {
 	DeliveryID string            `json:"delivery_id"` // <eventID>|<urlKey> — PK único por (evento, URL)
 	EventID    string            `json:"event_id"`
@@ -45,12 +50,17 @@ type Dispatcher struct {
 	http        *http.Client
 	maxAttempts int
 	nodeID      string
-	secretBox   *secret.Box // decifra HMAC secret vindo de sessions.config; nil-safe
-	cfgCache    sync.Map    // session -> cachedCfg
+	secretBox   *secret.Box    // decifra HMAC secret vindo de sessions.config; nil-safe
+	stream      *events.Stream // p/ emitir webhook.exhausted; nil-safe
+	cfgCache    sync.Map       // session -> cachedCfg
 }
 
 // SetSecretBox liga a decifragem dos secrets de webhook em repouso.
 func (d *Dispatcher) SetSecretBox(b *secret.Box) { d.secretBox = b }
+
+// SetStream dá ao dispatcher o log de eventos para emitir webhook.exhausted
+// quando uma entrega esgota as tentativas (dead-letter observável).
+func (d *Dispatcher) SetStream(s *events.Stream) { d.stream = s }
 
 func NewDispatcher(st *store.Store, client *asynq.Client, log *slog.Logger, timeout time.Duration, maxAttempts int, nodeID string) *Dispatcher {
 	if maxAttempts <= 0 {
@@ -219,6 +229,22 @@ func (d *Dispatcher) Handler() asynq.HandlerFunc {
 		}
 		attempt, _ := asynq.GetRetryCount(ctx)
 		attempt++
+		maxRetry, _ := asynq.GetMaxRetry(ctx)
+		// deadLetter: chama quando esta foi a última tentativa e falhou.
+		deadLetter := func(code int, reason string) {
+			if attempt <= maxRetry || d.stream == nil || p.Event == EventExhausted {
+				return
+			}
+			observability.WebhookDeliveries.WithLabelValues("exhausted").Inc()
+			d.stream.Append(events.Event{
+				ID: events.NewID(), Session: p.Session, Name: EventExhausted,
+				Timestamp: time.Now().UTC(), Engine: "wa-gateway",
+				Payload: map[string]any{
+					"deliveryId": p.DeliveryID, "eventId": p.EventID, "url": p.URL,
+					"event": p.Event, "attempts": attempt, "lastStatus": code, "lastError": reason,
+				},
+			})
+		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.URL, bytes.NewReader(p.Body))
 		if err != nil {
@@ -248,6 +274,7 @@ func (d *Dispatcher) Handler() asynq.HandlerFunc {
 		if err != nil {
 			_ = d.store.MarkFailed(ctx, p.DeliveryID, attempt, 0, err.Error())
 			observability.WebhookDeliveries.WithLabelValues("error").Inc()
+			deadLetter(0, err.Error())
 			return err
 		}
 		defer resp.Body.Close()
@@ -260,6 +287,7 @@ func (d *Dispatcher) Handler() asynq.HandlerFunc {
 		}
 		_ = d.store.MarkFailed(ctx, p.DeliveryID, attempt, resp.StatusCode, fmt.Sprintf("status %d", resp.StatusCode))
 		observability.WebhookDeliveries.WithLabelValues("retry").Inc()
+		deadLetter(resp.StatusCode, fmt.Sprintf("status %d", resp.StatusCode))
 		return fmt.Errorf("webhook respondeu %d", resp.StatusCode)
 	}
 }

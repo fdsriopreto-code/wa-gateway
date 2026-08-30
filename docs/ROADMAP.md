@@ -148,7 +148,7 @@ Estado honesto depois do batch de escala/robustez.
 | 7 | ~~`message.ack` antes do `SaveMessage`.~~ **MITIGADO**: `UpdateAckN` devolve linhas afetadas; se 0, o handler espera 400ms e re-tenta 1x. Se ainda 0, a mensagem não está no store (ex.: anterior ao `MESSAGE_STORE`) e segue. | raríssimo | 1 retry de 400ms | upsert de stub (se virar problema) |
 | 8 | **Stream `MAXLEN ~100k`.** Se TODOS os consumidores ficarem fora por mais tempo que 100k eventos, o Redis pode aparar entradas ainda não-`XACK`. | perda só se o serviço inteiro ficar down sob alto volume | consumidores moram no mesmo binário do produtor → "todos down" = serviço down | subir o `MAXLEN`, ou trim só por idade (`MINID`) preservando o PEL |
 | 3 | ~~Escopos de API key grosseiros.~~ **RESOLVIDO**: `scopes` como `session:<nome>` (ou `session:*`) + `sessionScopeMW` barram uma chave de tocar sessão fora do escopo; `GET /api/sessions` filtra; criar sessão é bloqueado; `/ws` exige `?session=`. Resta: `listDeliveries`/`retryDelivery` ainda não checam escopo de sessão (a entrega é buscada por `?session=`, então o middleware **já cobre**), mas endpoints puramente admin (`/api/keys`, `/api/stats`, `/api/cluster`) não exigem `canAdmin`. | endpoints admin abertos a qualquer chave `*` | escopo por sessão feito | gate `canAdmin` em `/api/stats`, `/api/cluster`, `/api/deliveries` |
-| 4 | **Sem dead-letter de webhook.** Depois de N tentativas o asynq desiste; a linha fica `failed` sem alerta. | entregas silenciosamente perdidas | botão "reenviar" manual no console | evento `webhook.exhausted` no próprio barramento + métrica |
+| 4 | ~~Sem dead-letter de webhook.~~ **RESOLVIDO**: esgotadas as tentativas, o dispatcher emite `webhook.exhausted` no stream (`{deliveryId, url, event, attempts, lastError}`) + métrica `wa_webhook_deliveries_total{result="exhausted"}`. O próprio webhook pode assinar o evento pra ser avisado. Guarda anti-loop (não re-emite pra falha de um `webhook.exhausted`). | — | — |
 | 5 | ~~Segredos em texto puro.~~ **RESOLVIDO** (`internal/secret`, `SECRET_KEY` = AES-256-GCM): `Manager.Upsert` sela `webhooks[].hmac.secret`, leitura decifra. Migração lazy. **Rotação sem downtime** via `SECRET_KEY_OLD` (CSV, só decifram). Sem `SECRET_KEY` = texto puro + warning no boot. | — | — |
 | 6 | **`migrations` sobem em todo boot sem lock explícito.** 2 nós subindo juntos podem correr. | risco baixo (goose usa `schema_migrations`) | goose serializa por versão | advisory lock no Postgres antes do `Migrate` |
 
@@ -171,7 +171,7 @@ Estado honesto depois do batch de escala/robustez.
 3. ~~Cifrar segredos + `canAdmin` + rotação `SECRET_KEY`~~ ✅
 4. ~~Riscos residuais #1/#2/#7~~ ✅
 5. ~~Labels do WhatsApp Business~~ ✅
-6. **Dead-letter de webhook** — evento `webhook.exhausted` após N falhas.
+6. ~~Dead-letter de webhook~~ ✅
 7. Motor Meta Cloud API (botões/listas) · plugins NATS/AMQP.
 
 ---

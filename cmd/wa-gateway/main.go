@@ -102,6 +102,7 @@ func run() error {
 
 	dispatcher := webhook.NewDispatcher(st, asynqClient, log, cfg.WebhookTimeout, cfg.WebhookMaxAttempts, cfg.NodeID)
 	dispatcher.SetSecretBox(secretBox)
+	dispatcher.SetStream(evStream)
 
 	// ---- armazenamento de midia (opcional) ----
 	// Falha de conexao com o S3/MinIO NAO derruba o app: degrada para "sem

@@ -233,6 +233,11 @@ const EVENT_CATALOG=[
     ["call.received","chamada recebida"],
     ["call.terminated","chamada encerrada"],
   ]},
+  {g:"Etiquetas & sistema",items:[
+    ["label.chat","chat etiquetado / desetiquetado"],
+    ["label.edit","etiqueta criada / editada / apagada"],
+    ["webhook.exhausted","uma entrega de webhook esgotou as tentativas"],
+  ]},
 ];
 const WILDCARDS=[["*","tudo"],["message.*","mensagens"],["session.*","sessão"],["group.*","grupos"],["call.*","chamadas"]];
 

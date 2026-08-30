@@ -238,7 +238,9 @@ sequenceDiagram
   Cada webhook vira uma task asynq (`TaskID = deliveryID`, retry exponencial,
   HMAC `X-Webhook-Signature: sha256=<hmac>`, headers `X-Webhook-Id` = evento /
   `X-Delivery-Id` = evento+URL). O payload fica em `webhook_deliveries.payload`
-  → `POST /api/deliveries/{id}/retry` reenfileira.
+  → `POST /api/deliveries/{id}/retry` reenfileira. Esgotou as tentativas →
+  emite `webhook.exhausted` no stream (dead-letter observável; o próprio
+  webhook pode assiná-lo).
 - **`inbox`**: consumidor do stream (grupo `inbox`, `message.*`, até 4 em
   paralelo) → `store.SaveMessage` / `SaveChat` / `UpdateAck`. Extrai
   `mediaMeta` (directPath/mediaKey/sha…) pra permitir download posterior.
