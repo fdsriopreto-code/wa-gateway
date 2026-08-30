@@ -63,6 +63,9 @@ Atualizado em **2026-08-30**.
 - **Reenvio manual de webhook** — `POST /api/deliveries/{id}/retry`
   reenfileira usando o payload guardado (`webhook_deliveries.payload`,
   migração 0005). Botão "reenviar" nas entregas com falha no console.
+- **Métricas de negócio** — `wa_messages_sent_total{session}` /
+  `wa_messages_received_total{session}` no `/metrics` (via `Manager.emit`);
+  `/api/stats.messages24h` (sent/received) → KPIs no dashboard.
 - CI completo + release automático do node n8n por tag.
 
 ---
@@ -71,7 +74,6 @@ Atualizado em **2026-08-30**.
 
 | Item | Por quê | Esboço |
 |---|---|---|
-| **Métricas de negócio** | msgs enviadas/recebidas por sessão, lag da fila | contadores Prometheus com label `session` (cuidar cardinalidade) |
 | **Labels do WhatsApp Business** | eventos `label.*` já chegam, falta expor | `GET /api/{s}/labels`, associar/desassociar em chat/mensagem |
 | **Plugins de saída (NATS / AMQP)** | quem não quer webhook HTTP | interface `Sink` no dispatcher, além do HTTP |
 | **`docs/` versionado** | este conjunto — manter em dia a cada mudança grande | — |

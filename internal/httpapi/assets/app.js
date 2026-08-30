@@ -486,11 +486,13 @@ views.overview={title:"Visão geral",async render(root){
   catch(e){clear(body);body.append(empty("alert",e.message,null,"não deu pra carregar"));return;}
   clear(body);
   const by=(stats.sessions&&stats.sessions.byStatus)||{};
+  const m24=stats.messages24h||{};
   const cards=[
     ["sessions","Sessões",stats.sessions?stats.sessions.total:0,true],
     ["wifi","Conectadas",by.WORKING||0,!!by.WORKING],
     ["qr","Aguardando QR",by.SCAN_QR_CODE||0,!!by.SCAN_QR_CODE],
-    ["circle","Paradas",(by.STOPPED||0)+(by.LOGGED_OUT||0),false],
+    ["send","Enviadas 24h",m24.sent||0,!!m24.sent],
+    ["inbox","Recebidas 24h",m24.received||0,!!m24.received],
     ["alert","Falhas",by.FAILED||0,false],
   ];
   body.append(h("div",{class:"kgrid"},cards.map(([i,k,v,on])=>

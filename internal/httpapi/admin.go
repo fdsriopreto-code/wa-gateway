@@ -24,13 +24,17 @@ func (d Deps) stats(w http.ResponseWriter, r *http.Request) {
 	for _, n := range byStatus {
 		total += n
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"sessions": map[string]any{"total": total, "byStatus": byStatus},
 		"database": d.Store.Pool.Ping(ctx) == nil,
 		"version":  d.Version,
 		"commit":   d.Commit,
 		"started":  d.StartedAt,
-	})
+	}
+	if sent, recv, err := d.Store.MessageStats24h(ctx); err == nil {
+		out["messages24h"] = map[string]int{"sent": sent, "received": recv}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // GET /api/deliveries?session=&limit=

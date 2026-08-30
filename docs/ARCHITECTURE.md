@@ -76,7 +76,7 @@ embutido via `//go:embed`.
 | `internal/httpapi` | REST, `/mcp`, `/openapi.json`, `/docs`, console SPA | `httpapi.NewRouter` |
 | `internal/auth` | API key (chave-mestra + tabela `api_keys` com Argon2id) + middleware | `auth.New` |
 | `internal/observability` | logger slog, métricas Prometheus | `NewLogger`, `metrics.go` |
-| `migrations/` | SQL goose, embarcado com `//go:embed` | `0001…0005` |
+| `migrations/` | SQL goose, embarcado com `//go:embed` | `0001…0006` |
 
 ### 2.1 A interface `Engine`
 

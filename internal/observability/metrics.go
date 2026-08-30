@@ -46,4 +46,14 @@ var (
 		Name: "wa_rate_limited_total",
 		Help: "Requisicoes rejeitadas por rate limit, por chave de API.",
 	}, []string{"key"})
+
+	MessagesSent = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "wa_messages_sent_total",
+		Help: "Mensagens enviadas pela conta (fromMe), por sessao.",
+	}, []string{"session"})
+
+	MessagesReceived = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "wa_messages_received_total",
+		Help: "Mensagens recebidas (nao fromMe), por sessao.",
+	}, []string{"session"})
 )

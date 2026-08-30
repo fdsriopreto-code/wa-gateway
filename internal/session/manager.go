@@ -401,6 +401,17 @@ func (m *Manager) emit(name, engName string) func(events.Event) {
 		observability.EventsPublished.WithLabelValues(e.Name).Inc()
 		m.bus.Publish(e)
 
+		switch e.Name {
+		case "message":
+			observability.MessagesReceived.WithLabelValues(name).Inc()
+		case "message.any":
+			if mp, ok := e.Payload.(map[string]any); ok {
+				if fm, _ := mp["fromMe"].(bool); fm {
+					observability.MessagesSent.WithLabelValues(name).Inc()
+				}
+			}
+		}
+
 		if e.Name == events.SessionStatus {
 			if eng, ok := m.Engine(name); ok {
 				jid := eng.JID()

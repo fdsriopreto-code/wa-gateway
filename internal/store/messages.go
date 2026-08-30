@@ -183,6 +183,31 @@ func nilBytes(b []byte) []byte {
 	}
 	return b
 }
+
+// MessageStats24h conta mensagens das últimas 24h, separadas por direção.
+func (s *Store) MessageStats24h(ctx context.Context) (sent, received int, err error) {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT from_me, count(*) FROM messages
+		 WHERE timestamp > now() - interval '24 hours' GROUP BY from_me`)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fm bool
+		var n int
+		if err := rows.Scan(&fm, &n); err != nil {
+			return 0, 0, err
+		}
+		if fm {
+			sent = n
+		} else {
+			received = n
+		}
+	}
+	return sent, received, rows.Err()
+}
+
 func itoa(n int) string {
 	if n <= 0 {
 		return "0"
