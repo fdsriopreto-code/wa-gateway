@@ -1,0 +1,31 @@
+{
+  "name": "n8n-nodes-wa-gateway",
+  "version": "0.1.0",
+  "description": "Node n8n para o wa-gateway — API HTTP multi-sessão de WhatsApp",
+  "keywords": ["n8n-community-node-package", "whatsapp", "wa-gateway"],
+  "license": "MIT",
+  "homepage": "https://github.com/fdsriopreto-code/wa-gateway",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc && cp nodes/WaGateway/*.svg dist/nodes/WaGateway/",
+    "dev": "tsc --watch",
+    "lint": "tsc --noEmit"
+  },
+  "files": ["dist"],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": ["dist/credentials/WaGatewayApi.credentials.js"],
+    "nodes": [
+      "dist/nodes/WaGateway/WaGateway.node.js",
+      "dist/nodes/WaGatewayTrigger/WaGatewayTrigger.node.js"
+    ]
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "n8n-workflow": "*",
+    "typescript": "^5.4"
+  }
+}

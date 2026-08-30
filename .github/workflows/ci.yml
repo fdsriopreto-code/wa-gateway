@@ -35,6 +35,17 @@ jobs:
       - name: node --check no console
         run: node --check internal/httpapi/assets/app.js
 
+  n8n:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: typecheck do node n8n
+        working-directory: clients/n8n
+        run: npm install --no-audit --no-fund && npm run build
+
   docker:
     runs-on: ubuntu-latest
     needs: [go, web]

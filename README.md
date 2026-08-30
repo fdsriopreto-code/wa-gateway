@@ -88,6 +88,14 @@ Use o node **HTTP Request**: `POST {BASE}/api/sendText`, header
 Todos os endpoints estão no `/docs`. Para fluxos com retry, adicione o header
 `Idempotency-Key: {{ $json.messageId }}` (ou um uuid do fluxo).
 
+### n8n — node dedicado
+
+Em `clients/n8n/` tem um **node comunitário** (`n8n-nodes-wa-gateway`): dropdown
+de operações, converte binário do nó anterior pra base64 sozinho, e um
+**Trigger** que registra o webhook na sessão automaticamente ao ativar o
+workflow. Instala pelo painel (Community Nodes) ou build local — ver
+`clients/n8n/README.md`.
+
 ### Agente de IA — servidor MCP
 
 `POST {BASE}/mcp` fala **Model Context Protocol** (JSON-RPC 2.0, transporte
