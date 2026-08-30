@@ -139,6 +139,10 @@ Atualizado em **2026-08-30**.
   `config.otp` por sessão (template/brand/ttl/limites). Métricas
   `wa_otp_sent_total` / `wa_otp_verify_total{result}`. Sem env nem tabela nova.
   Console: grupo **OTP** no Playground. Testes com miniredis.
+  Follow-ups: (a) sessão Cloud API deveria mandar por *template de autenticação*
+  aprovado (`config.otp.templateName`), não texto puro — a Meta pode barrar OTP
+  em texto em escala; (b) `send`/`verify` precisam usar o mesmo formato de
+  número (ou o fluxo por `id`).
 - CI completo + release automático do node n8n por tag.
 
 ---
