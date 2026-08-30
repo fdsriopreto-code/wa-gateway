@@ -1,8 +1,13 @@
 // Package ws entrega eventos em tempo real por WebSocket. Best-effort:
 // sem fila, sem retry; cliente lento perde mensagens (contador em /metrics).
+//
+// Multi-no: cada no publica seus eventos locais num canal Redis; os outros
+// nos reentregam para os clientes deles. Como uma sessao roda em exatamente
+// um no (lock de posse), nao ha duplicidade.
 package ws
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -13,9 +18,12 @@ import (
 
 	"github.com/coder/websocket"
 
+	"wa-gateway/internal/cache"
 	"wa-gateway/internal/events"
 	"wa-gateway/internal/observability"
 )
+
+const redisChannel = "wa:ws"
 
 type client struct {
 	session string
@@ -24,17 +32,23 @@ type client struct {
 }
 
 type Hub struct {
-	log *slog.Logger
-	mu  sync.RWMutex
-	set map[*client]struct{}
+	log    *slog.Logger
+	redis  *cache.Redis
+	nodeID string
+	mu     sync.RWMutex
+	set    map[*client]struct{}
 }
 
-func NewHub(log *slog.Logger) *Hub {
-	return &Hub{log: log, set: make(map[*client]struct{})}
+func NewHub(log *slog.Logger, redis *cache.Redis, nodeID string) *Hub {
+	return &Hub{log: log, redis: redis, nodeID: nodeID, set: make(map[*client]struct{})}
 }
 
-// Run consome o barramento e faz fan-out para os clientes conectados.
+// Run consome o barramento local (fan-out + publish no Redis) e assina o
+// canal Redis (reentrega eventos de outros nos).
 func (h *Hub) Run(ctx context.Context, bus *events.Bus) {
+	if h.redis != nil {
+		go h.consumeRedis(ctx)
+	}
 	ch, cancel := bus.Subscribe("ws", "*", 8192)
 	defer cancel()
 	for {
@@ -45,12 +59,12 @@ func (h *Hub) Run(ctx context.Context, bus *events.Bus) {
 			if !ok {
 				return
 			}
-			h.broadcast(e)
+			h.onLocal(e)
 		}
 	}
 }
 
-func (h *Hub) broadcast(e events.Event) {
+func (h *Hub) onLocal(e events.Event) {
 	msg, err := json.Marshal(map[string]any{
 		"id":        e.ID,
 		"session":   e.Session,
@@ -62,13 +76,55 @@ func (h *Hub) broadcast(e events.Event) {
 	if err != nil {
 		return
 	}
+	h.deliver(e.Session, e.Name, msg)
+	if h.redis != nil {
+		framed := append([]byte(h.nodeID), '\x00')
+		framed = append(framed, msg...)
+		_ = h.redis.Publish(context.Background(), redisChannel, framed)
+	}
+}
+
+func (h *Hub) consumeRedis(ctx context.Context) {
+	sub := h.redis.Subscribe(ctx, redisChannel)
+	defer sub.Close()
+	for {
+		m, err := sub.ReceiveMessage(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			time.Sleep(time.Second)
+			continue
+		}
+		raw := []byte(m.Payload)
+		i := bytes.IndexByte(raw, '\x00')
+		if i < 0 {
+			continue
+		}
+		if string(raw[:i]) == h.nodeID {
+			continue // meu proprio evento, ja entregue localmente
+		}
+		body := raw[i+1:]
+		var meta struct {
+			Session string `json:"session"`
+			Event   string `json:"event"`
+		}
+		if json.Unmarshal(body, &meta) != nil {
+			continue
+		}
+		h.deliver(meta.Session, meta.Event, append([]byte(nil), body...))
+	}
+}
+
+// deliver aplica os filtros de cada cliente e envia a mensagem ja pronta.
+func (h *Hub) deliver(session, name string, msg []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for c := range h.set {
-		if c.session != "*" && c.session != e.Session {
+		if c.session != "*" && c.session != session {
 			continue
 		}
-		if len(c.filters) > 0 && !events.MatchAny(c.filters, e.Name) {
+		if len(c.filters) > 0 && !events.MatchAny(c.filters, name) {
 			continue
 		}
 		select {

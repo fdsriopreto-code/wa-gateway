@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -322,4 +323,134 @@ var mcpTools = []mcpTool{
 			return d.Store.ListMessages(ctx, s(a, "session"), s(a, "chatId"), lim, timeZero())
 		},
 	},
+	{
+		name: "send_image", desc: "Envia uma imagem a partir de uma URL pública. O gateway baixa e reenvia.",
+		schema: obj([]string{"session", "chatId", "url"}, map[string]any{
+			"session": pstr("sessão"), "chatId": pstr("destino"),
+			"url": pstr("URL http(s) da imagem"), "caption": pstr("legenda (opcional)"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			data, mime, err := fetchURL(ctx, s(a, "url"), 16<<20)
+			if err != nil {
+				return nil, err
+			}
+			return eng.SendImage(ctx, s(a, "chatId"), data, mime, s(a, "caption"))
+		},
+	},
+	{
+		name: "send_file", desc: "Envia um documento a partir de uma URL pública.",
+		schema: obj([]string{"session", "chatId", "url"}, map[string]any{
+			"session": pstr("sessão"), "chatId": pstr("destino"),
+			"url": pstr("URL http(s) do arquivo"), "filename": pstr("nome do arquivo (opcional)"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			data, mime, err := fetchURL(ctx, s(a, "url"), 64<<20)
+			if err != nil {
+				return nil, err
+			}
+			name := s(a, "filename")
+			if name == "" {
+				name = "arquivo"
+			}
+			return eng.SendFile(ctx, s(a, "chatId"), engine.Media{Data: data, Mimetype: mime, Filename: name})
+		},
+	},
+	{
+		name: "mark_read", desc: "Marca uma mensagem como lida (envia o recibo de leitura).",
+		schema: obj([]string{"session", "chatId", "messageId"}, map[string]any{
+			"session": pstr("sessão"), "chatId": pstr("chat"), "messageId": pstr("id da mensagem"),
+			"fromMe": pbool("a mensagem foi enviada por mim"), "senderId": pstr("grupo: jid do autor"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			ref := engine.MessageRef{ChatID: s(a, "chatId"), ID: s(a, "messageId"), FromMe: b(a, "fromMe"), SenderID: s(a, "senderId")}
+			if err := eng.MarkRead(ctx, ref); err != nil {
+				return nil, err
+			}
+			return map[string]bool{"ok": true}, nil
+		},
+	},
+	{
+		name: "create_group", desc: "Cria um grupo com uma lista de participantes.",
+		schema: obj([]string{"session", "name", "participants"}, map[string]any{
+			"session": pstr("sessão"), "name": pstr("nome do grupo"),
+			"participants": parr("jids 5599...@s.whatsapp.net"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			return eng.CreateGroup(ctx, s(a, "name"), slist(a, "participants"))
+		},
+	},
+	{
+		name: "group_participants", desc: "Adiciona/remove/promove/rebaixa participantes de um grupo.",
+		schema: obj([]string{"session", "groupJid", "action", "participants"}, map[string]any{
+			"session": pstr("sessão"), "groupJid": pstr("...@g.us"),
+			"action":       map[string]any{"type": "string", "enum": []string{"add", "remove", "promote", "demote"}},
+			"participants": parr("jids"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			return eng.UpdateParticipants(ctx, s(a, "groupJid"), engine.ParticipantAction(s(a, "action")), slist(a, "participants"))
+		},
+	},
+	{
+		name: "forward_message", desc: "Encaminha uma mensagem guardada (por id) para outro chat.",
+		schema: obj([]string{"session", "toChatId", "messageId"}, map[string]any{
+			"session": pstr("sessão"), "toChatId": pstr("destino"), "messageId": pstr("id da mensagem guardada"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			rec, err := d.Store.GetMessage(ctx, s(a, "session"), s(a, "messageId"))
+			if err != nil {
+				return nil, err
+			}
+			return eng.Forward(ctx, s(a, "toChatId"), engine.ForwardSource{Type: rec.Type, Body: rec.Body, Media: rec.Media})
+		},
+	},
+}
+
+// fetchURL baixa uma URL http(s) com limite de tamanho e devolve bytes+mime.
+func fetchURL(ctx context.Context, url string, max int64) ([]byte, string, error) {
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return nil, "", fmt.Errorf("url inválida (precisa começar com http/https)")
+	}
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, "", fmt.Errorf("URL respondeu %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, max))
+	if err != nil {
+		return nil, "", err
+	}
+	return data, resp.Header.Get("Content-Type"), nil
 }

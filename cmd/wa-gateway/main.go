@@ -142,7 +142,7 @@ func run() error {
 	defer asynqSrv.Shutdown()
 
 	// ---- websocket ----
-	hub := ws.NewHub(log)
+	hub := ws.NewHub(log, rc, cfg.NodeID)
 
 	// ---- consumidores do barramento ----
 	go dispatcher.Run(ctx, bus)
