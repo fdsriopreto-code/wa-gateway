@@ -107,6 +107,7 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 
 		// --- contatos ---
 		r.Route("/api/contacts", func(r chi.Router) {
+			r.Get("/", d.contactsList)
 			r.Get("/check", d.contactsCheck)
 			r.Get("/info", d.contactsInfo)
 			r.Get("/profile-picture", d.contactsPicture)

@@ -73,6 +73,7 @@ const OPS: Op[] = [
 	{ resource: 'group', operation: 'inviteLink', method: 'GET', path: (c) => `/api/groups/${JIDp(c)}/invite-link?session=${S(c)}` },
 
 	// ---- Contact
+	{ resource: 'contact', operation: 'list', method: 'GET', path: (c) => `/api/contacts?session=${S(c)}&q=${encodeURIComponent((c.get('q', '') as string) || '')}&limit=${c.get('limit', 0)}` },
 	{ resource: 'contact', operation: 'check', method: 'GET', path: (c) => `/api/contacts/check?session=${S(c)}&phone=${encodeURIComponent(c.get('phone') as string)}` },
 	{ resource: 'contact', operation: 'info', method: 'GET', path: (c) => `/api/contacts/info?session=${S(c)}&jid=${encodeURIComponent(c.get('jid') as string)}` },
 	{ resource: 'contact', operation: 'picture', method: 'GET', path: (c) => `/api/contacts/profile-picture?session=${S(c)}&jid=${encodeURIComponent(c.get('jid') as string)}` },
@@ -124,7 +125,7 @@ export class WaGateway implements INodeType {
 				['Listar', 'list'], ['Detalhes', 'get'], ['Criar', 'create'], ['Participantes', 'participants'],
 				['Renomear', 'setName'], ['Link de convite', 'inviteLink'],
 			], 'list'),
-			opt('contact', [['Checar número', 'check'], ['Info de perfil', 'info'], ['Foto de perfil', 'picture']], 'check'),
+			opt('contact', [['Listar agenda', 'list'], ['Checar número', 'check'], ['Info de perfil', 'info'], ['Foto de perfil', 'picture']], 'list'),
 			opt('chat', [['Listar conversas', 'list'], ['Histórico da conversa', 'history']], 'history'),
 
 			// ---- common fields
@@ -193,11 +194,13 @@ export class WaGateway implements INodeType {
 			], default: 'add', displayOptions: { show: { resource: ['group'], operation: ['participants'] } } },
 
 			// contact
+			str('q', 'Filtro', { placeholder: 'nome ou telefone (opcional)', show: { resource: ['contact'], operation: ['list'] } }),
 			str('phone', 'Telefones (vírgula)', { placeholder: '+5599...,+55...', required: true, show: { resource: ['contact'], operation: ['check'] } }),
 			str('jid', 'JID(s) (vírgula)', { placeholder: '...@s.whatsapp.net', required: true, show: { resource: ['contact'], operation: ['info', 'picture'] } }),
 
 			// chat
 			num('limit', 'Limite', { default: 50, show: { resource: ['chat'] } }),
+			num('limit', 'Limite (0 = tudo)', { default: 0, show: { resource: ['contact'], operation: ['list'] } }),
 		],
 	};
 

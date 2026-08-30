@@ -49,11 +49,11 @@ type Manager struct {
 	mu      sync.RWMutex
 	running map[string]*handle
 
-	rawCache sync.Map // name -> rawFlag
+	rawCache sync.Map // name -> cfgFlag
 }
 
-type rawFlag struct {
-	on  bool
+type cfgFlag struct {
+	cfg Config
 	exp time.Time
 }
 
@@ -65,22 +65,29 @@ func NewManager(st *store.Store, rc *cache.Redis, bus *events.Bus, log *slog.Log
 	}
 }
 
-// sessionWantsRaw le config.rawEvents com cache curto (10s).
-func (m *Manager) sessionWantsRaw(name string) bool {
+// sessionConfig le sessions.config com cache curto (10s).
+func (m *Manager) sessionConfig(name string) Config {
 	if v, ok := m.rawCache.Load(name); ok {
-		f := v.(rawFlag)
+		f := v.(cfgFlag)
 		if time.Now().Before(f.exp) {
-			return f.on
+			return f.cfg
 		}
 	}
-	on := false
+	var cfg Config
 	if rec, err := m.store.GetSession(context.Background(), name); err == nil {
-		if cfg, err := ParseConfig(rec.Config); err == nil {
-			on = cfg.RawEvents
+		if c, err := ParseConfig(rec.Config); err == nil {
+			cfg = c
 		}
 	}
-	m.rawCache.Store(name, rawFlag{on: on, exp: time.Now().Add(10 * time.Second)})
-	return on
+	m.rawCache.Store(name, cfgFlag{cfg: cfg, exp: time.Now().Add(10 * time.Second)})
+	return cfg
+}
+
+func (m *Manager) sessionWantsRaw(name string) bool { return m.sessionConfig(name).RawEvents }
+
+func (m *Manager) sessionBehavior(name string) engine.AutoBehavior {
+	c := m.sessionConfig(name)
+	return engine.AutoBehavior{AutoRead: c.AutoRead, AutoOnline: c.AutoOnline}
 }
 
 func lockKey(name string) string { return "wa:lock:" + name }
@@ -171,6 +178,7 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		Emit:      m.emit(name, engName),
 		Media:     m.media,
 		RawEvents: func() bool { return m.sessionWantsRaw(name) },
+		Behavior:  func() engine.AutoBehavior { return m.sessionBehavior(name) },
 		StoredJID: rec.JID,
 	})
 	if err != nil {

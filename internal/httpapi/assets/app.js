@@ -674,6 +674,8 @@ function cfgModal(s){
   const obJit=h("input",{type:"number",value:ob.jitterMs||"",placeholder:"2000"});
   const obDay=h("input",{type:"number",value:ob.dailyLimit||"",placeholder:"0 = ilimitado"});
   const rawChk=h("input",{type:"checkbox",checked:cfg.rawEvents||undefined});
+  const autoReadChk=h("input",{type:"checkbox",checked:cfg.autoRead||undefined});
+  const autoOnlineChk=h("input",{type:"checkbox",checked:cfg.autoOnline||undefined});
 
   const bodyNode=h("div",{},
     h("div",{class:"tabs",style:"margin-bottom:14px"},
@@ -695,6 +697,8 @@ function cfgModal(s){
         h("div",{class:"field"},h("label",{},"limite diário"),obDay))),
     // pane advanced
     h("div",{class:"cfg-pane","data-pane":"2",hidden:true},
+      h("label",{class:"check",style:"margin-bottom:10px"},autoReadChk,h("span",{},"marcar mensagens recebidas como lidas automaticamente (recibo azul)")),
+      h("label",{class:"check",style:"margin-bottom:10px"},autoOnlineChk,h("span",{},"manter a sessão ",h("code",{},"online")," (presença disponível) após conectar")),
       h("label",{class:"check",style:"margin-bottom:12px"},rawChk,h("span",{},"incluir ",h("code",{},"raw")," (struct cru do whatsmeow) nos eventos de mensagem")),
       h("details",{},h("summary",{class:"hint",style:"cursor:pointer"},"ver JSON final"),
         h("pre",{class:"out",id:"cfg-preview",style:"margin-top:8px"}))),
@@ -724,6 +728,8 @@ function cfgModal(s){
     if(obDay.value)o.dailyLimit=+obDay.value;
     if(Object.keys(o).length)out.outbox=o;
     if(rawChk.checked)out.rawEvents=true;
+    if(autoReadChk.checked)out.autoRead=true;
+    if(autoOnlineChk.checked)out.autoOnline=true;
     if(cfg.metadata)out.metadata=cfg.metadata;
     return out;
   }

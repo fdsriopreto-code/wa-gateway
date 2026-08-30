@@ -58,6 +58,7 @@ var specEndpoints = []ep{
 	{"POST", "/api/presence", "Messaging", "Presença no chat (digitando…)", map[string]any{"session": "default", "chatId": "…", "state": "typing"}, nil},
 
 	// ---- contatos
+	{"GET", "/api/contacts", "Contacts", "Listar agenda da sessão", nil, []string{"session", "q?", "limit?"}},
 	{"GET", "/api/contacts/check", "Contacts", "Número está no WhatsApp?", nil, []string{"session", "phone"}},
 	{"GET", "/api/contacts/info", "Contacts", "Info de perfil", nil, []string{"session", "jid"}},
 	{"GET", "/api/contacts/profile-picture", "Contacts", "Foto de perfil", nil, []string{"session", "jid", "preview?"}},

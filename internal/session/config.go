@@ -11,6 +11,10 @@ type Config struct {
 	// RawEvents inclui o struct cru da engine em payload.raw nos eventos de
 	// mensagem/recibo. Default false (payload enxuto).
 	RawEvents bool `json:"rawEvents,omitempty"`
+	// AutoRead marca como lida (recibo azul) toda mensagem recebida.
+	AutoRead bool `json:"autoRead,omitempty"`
+	// AutoOnline mantem a sessao com presenca "available" apos conectar.
+	AutoOnline bool `json:"autoOnline,omitempty"`
 }
 
 // OutboxConfig sobrescreve, para esta sessao, o pacing global da fila de

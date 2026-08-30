@@ -40,7 +40,15 @@ type Engine struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// pool de download de midia: tira o attachMedia do caminho critico do
+	// handler de eventos do whatsmeow (senao uma rajada de midia atrasa os
+	// textos que vem atras).
+	mediaJobs chan *waEvents.Message
+	mediaWG   sync.WaitGroup
 }
+
+const mediaWorkers = 4
 
 func New(deps engine.Deps) (engine.Engine, error) {
 	return &Engine{deps: deps, status: engine.StatusStopped}, nil
@@ -107,7 +115,13 @@ func (e *Engine) Start(ctx context.Context) error {
 	e.mu.Lock()
 	e.container = container
 	e.client = client
+	e.mediaJobs = make(chan *waEvents.Message, 256)
 	e.mu.Unlock()
+
+	for i := 0; i < mediaWorkers; i++ {
+		e.mediaWG.Add(1)
+		go e.mediaWorker(e.mediaJobs)
+	}
 
 	needsQR := client.Store.ID == nil
 	if needsQR {
@@ -207,18 +221,33 @@ func (e *Engine) handleEvent(raw any) {
 			e.qr = ""
 		}
 		e.mu.Unlock()
+		if st == engine.StatusWorking && e.behavior().AutoOnline {
+			go e.goOnline()
+		}
 	}
 
 	// mensagens e recibos saem com payload normalizado (achatado). "raw" so
 	// entra se a sessao pediu (config.rawEvents).
 	switch ev := raw.(type) {
 	case *waEvents.Message:
+		if !ev.Info.IsFromMe && e.behavior().AutoRead {
+			go e.autoRead(ev)
+		}
+		// midia (com sink ligado) vai pro pool: o download nao pode bloquear
+		// este goroutine, senao atrasa as mensagens que vem atras.
+		if ev.Info.MediaType != "" && e.deps.Media != nil && e.deps.Media.Enabled() {
+			e.mu.RLock()
+			jobs := e.mediaJobs
+			e.mu.RUnlock()
+			select {
+			case jobs <- ev:
+				return
+			default: // pool cheio (ou parado) -> cai no caminho inline
+			}
+		}
 		p := normalizeMessage(ev, e.wantRaw())
 		e.attachMedia(p, ev)
-		e.emit("message.any", p)
-		if !ev.Info.IsFromMe {
-			e.emit("message", p) // recebidas: o que um bot assina
-		}
+		e.emitMessage(p, ev.Info.IsFromMe)
 		return
 	case *waEvents.Receipt:
 		e.emit("message.ack", normalizeReceipt(ev, e.wantRaw()))
@@ -229,8 +258,59 @@ func (e *Engine) handleEvent(raw any) {
 	e.emit(name, payload)
 }
 
+// mediaWorker processa mensagens de midia fora do caminho critico.
+func (e *Engine) mediaWorker(jobs <-chan *waEvents.Message) {
+	defer e.mediaWG.Done()
+	for ev := range jobs {
+		p := normalizeMessage(ev, e.wantRaw())
+		e.attachMedia(p, ev)
+		e.emitMessage(p, ev.Info.IsFromMe)
+	}
+}
+
+func (e *Engine) emitMessage(p map[string]any, fromMe bool) {
+	e.emit("message.any", p)
+	if !fromMe {
+		e.emit("message", p) // recebidas: o que um bot assina
+	}
+}
+
 func (e *Engine) wantRaw() bool {
 	return e.deps.RawEvents != nil && e.deps.RawEvents()
+}
+
+func (e *Engine) behavior() engine.AutoBehavior {
+	if e.deps.Behavior == nil {
+		return engine.AutoBehavior{}
+	}
+	return e.deps.Behavior()
+}
+
+// autoRead marca a mensagem recebida como lida, fora do caminho critico.
+func (e *Engine) autoRead(ev *waEvents.Message) {
+	e.mu.RLock()
+	client := e.client
+	e.mu.RUnlock()
+	if client == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	sender := ev.Info.Sender
+	_ = client.MarkRead(ctx, []types.MessageID{ev.Info.ID}, time.Now(), ev.Info.Chat, sender)
+}
+
+// goOnline manda presenca "available" apos conectar (mantem o "online").
+func (e *Engine) goOnline() {
+	e.mu.RLock()
+	client := e.client
+	e.mu.RUnlock()
+	if client == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	_ = client.SendPresence(ctx, types.PresenceAvailable)
 }
 
 // attachMedia baixa+descriptografa a midia recebida e guarda no backend,
@@ -295,10 +375,17 @@ func (e *Engine) fail() {
 func (e *Engine) Stop() error {
 	e.mu.Lock()
 	client, cancel := e.client, e.cancel
-	e.client, e.container, e.cancel = nil, nil, nil
+	jobs := e.mediaJobs
+	e.client, e.container, e.cancel, e.mediaJobs = nil, nil, nil, nil
 	e.setStatusLocked(engine.StatusStopped)
 	e.mu.Unlock()
 
+	// fecha o pool e espera os workers drenarem o que ja pegaram. attachMedia
+	// vira no-op quando e.client == nil, entao os jobs restantes saem rapido.
+	if jobs != nil {
+		close(jobs)
+		e.mediaWG.Wait()
+	}
 	if client != nil {
 		client.Disconnect()
 	}

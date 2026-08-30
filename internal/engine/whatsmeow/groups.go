@@ -82,6 +82,34 @@ func (e *Engine) GetProfilePicture(ctx context.Context, jid string, preview bool
 	return info.URL, nil
 }
 
+// Contacts devolve a agenda inteira da sessao a partir do contact store local
+// do whatsmeow (populado por sync inicial + push names vistos em conversas).
+func (e *Engine) Contacts(ctx context.Context) ([]engine.ContactEntry, error) {
+	client, err := e.currentClient()
+	if err != nil {
+		return nil, err
+	}
+	all, err := client.Store.Contacts.GetAllContacts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]engine.ContactEntry, 0, len(all))
+	for jid, c := range all {
+		entry := engine.ContactEntry{
+			JID:          jid.ToNonAD().String(),
+			FirstName:    c.FirstName,
+			FullName:     c.FullName,
+			PushName:     c.PushName,
+			BusinessName: c.BusinessName,
+		}
+		if jid.Server == types.DefaultUserServer {
+			entry.Phone = jid.User
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
 // --- grupos ---
 
 func toGroup(gi *types.GroupInfo) engine.Group {

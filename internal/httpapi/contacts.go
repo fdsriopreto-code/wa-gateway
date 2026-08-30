@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +31,38 @@ func (d Deps) contactsCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// GET /api/contacts?session=&q=&limit=
+// Lista a agenda inteira da sessao (contact store local do whatsmeow).
+func (d Deps) contactsList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	eng, ok := d.engineFor(w, q.Get("session"))
+	if !ok {
+		return
+	}
+	all, err := eng.Contacts(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "query_failed", err.Error())
+		return
+	}
+	if term := strings.ToLower(strings.TrimSpace(q.Get("q"))); term != "" {
+		filtered := all[:0]
+		for _, c := range all {
+			if strings.Contains(strings.ToLower(c.FullName), term) ||
+				strings.Contains(strings.ToLower(c.FirstName), term) ||
+				strings.Contains(strings.ToLower(c.PushName), term) ||
+				strings.Contains(strings.ToLower(c.BusinessName), term) ||
+				strings.Contains(c.Phone, term) {
+				filtered = append(filtered, c)
+			}
+		}
+		all = filtered
+	}
+	if n, _ := strconv.Atoi(q.Get("limit")); n > 0 && n < len(all) {
+		all = all[:n]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"contacts": all, "count": len(all)})
 }
 
 // GET /api/contacts/info?session=&jid=...,...

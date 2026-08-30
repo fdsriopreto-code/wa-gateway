@@ -261,6 +261,36 @@ var mcpTools = []mcpTool{
 		},
 	},
 	{
+		name: "list_contacts", desc: "Lista a agenda da sessão (nome, telefone, push name). q filtra por texto; limit corta.",
+		schema: obj([]string{"session"}, map[string]any{
+			"session": pstr("sessão"), "q": pstr("filtro por nome/telefone"), "limit": pnum("máx de contatos"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			all, err := eng.Contacts(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if term := strings.ToLower(strings.TrimSpace(s(a, "q"))); term != "" {
+				out := all[:0]
+				for _, c := range all {
+					if strings.Contains(strings.ToLower(c.FullName+" "+c.FirstName+" "+c.PushName+" "+c.BusinessName), term) ||
+						strings.Contains(c.Phone, term) {
+						out = append(out, c)
+					}
+				}
+				all = out
+			}
+			if n := int(f(a, "limit")); n > 0 && n < len(all) {
+				all = all[:n]
+			}
+			return map[string]any{"contacts": all, "count": len(all)}, nil
+		},
+	},
+	{
 		name: "get_contact_info", desc: "Perfil público de um contato (status, foto id, verificado).",
 		schema: obj([]string{"session", "jid"}, map[string]any{
 			"session": pstr("sessão"), "jid": pstr("5599...@s.whatsapp.net (vírgula p/ vários)"),

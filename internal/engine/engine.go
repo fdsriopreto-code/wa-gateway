@@ -97,6 +97,16 @@ type Contact struct {
 	VCard string `json:"vcard,omitempty"`
 }
 
+// ContactEntry e uma entrada da agenda da sessao (contact store do whatsmeow).
+type ContactEntry struct {
+	JID          string `json:"jid"`
+	Phone        string `json:"phone,omitempty"`
+	FirstName    string `json:"firstName,omitempty"`
+	FullName     string `json:"fullName,omitempty"`
+	PushName     string `json:"pushName,omitempty"`
+	BusinessName string `json:"businessName,omitempty"`
+}
+
 // MessageRef aponta uma mensagem ja existente (para reagir, apagar, editar,
 // marcar como lida). SenderID so e obrigatorio em grupo quando FromMe e false.
 type MessageRef struct {
@@ -197,6 +207,7 @@ type Engine interface {
 	CheckOnWhatsApp(ctx context.Context, phones []string) ([]OnWhatsApp, error)
 	GetUserInfo(ctx context.Context, jids []string) ([]UserInfo, error)
 	GetProfilePicture(ctx context.Context, jid string, preview bool) (string, error)
+	Contacts(ctx context.Context) ([]ContactEntry, error)
 	DownloadMedia(ctx context.Context, m StoredMedia) (data []byte, mimetype string, err error)
 
 	// --- perfil / conta ---
@@ -230,6 +241,14 @@ type MediaSink interface {
 	Store(ctx context.Context, session, msgID, mimetype string, data []byte) (url string, size int, err error)
 }
 
+// AutoBehavior sao comportamentos automaticos que a sessao pode ligar.
+type AutoBehavior struct {
+	// AutoRead marca como lida toda mensagem recebida (envia recibo azul).
+	AutoRead bool
+	// AutoOnline mantem a sessao com presenca "available" apos conectar.
+	AutoOnline bool
+}
+
 // Deps e o que o gateway injeta em cada engine.
 type Deps struct {
 	Session string
@@ -244,6 +263,9 @@ type Deps struct {
 	// RawEvents diz se o payload de mensagem/recibo deve incluir "raw" (o
 	// struct cru da engine). Default (nil): nao inclui.
 	RawEvents func() bool
+	// Behavior devolve flags de comportamento automatico da sessao
+	// (auto-read, presenca online). Default (nil): tudo desligado.
+	Behavior func() AutoBehavior
 	// StoredJID e o JID que esta sessao ja pareou (coluna sessions.jid),
 	// vazio para sessao nova. A engine usa para carregar o device certo
 	// quando varias sessoes compartilham o mesmo store.
