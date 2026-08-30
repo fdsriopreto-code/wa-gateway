@@ -27,7 +27,10 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - name: build
         working-directory: clients/n8n
-        run: npm install --no-audit --no-fund && npm run build
+        # --ignore-scripts: o tsc so precisa dos .d.ts; nao compilamos deps
+        # nativas transitivas (isolated-vm do n8n-workflow) que quebram no
+        # Node 20 do runner.
+        run: npm install --no-audit --no-fund --ignore-scripts && npm run build
       - name: publish
         working-directory: clients/n8n
         run: npm publish --access public

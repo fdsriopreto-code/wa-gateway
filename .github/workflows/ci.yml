@@ -44,7 +44,9 @@ jobs:
           node-version: "20"
       - name: typecheck do node n8n
         working-directory: clients/n8n
-        run: npm install --no-audit --no-fund && npm run build
+        # --ignore-scripts: nao precisamos compilar deps nativas (isolated-vm
+        # etc. que vem transitiva do n8n-workflow) pra rodar o tsc.
+        run: npm install --no-audit --no-fund --ignore-scripts && npm run build
 
   docker:
     runs-on: ubuntu-latest
