@@ -64,7 +64,7 @@ func NewDispatcher(st *store.Store, client *asynq.Client, log *slog.Logger, time
 // Run consome o barramento ate o contexto ser cancelado. Um pool processa os
 // eventos para que a leitura de config no Postgres nao serialize o dispatch.
 func (d *Dispatcher) Run(ctx context.Context, bus *events.Bus) {
-	ch, cancel := bus.Subscribe("webhook", "*", 16384)
+	ch, cancel := bus.SubscribeReliable("webhook", "*", 16384, 250*time.Millisecond)
 	defer cancel()
 
 	const workers = 6

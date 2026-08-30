@@ -216,9 +216,12 @@ sequenceDiagram
   `session.qr`, etc.
 - **Mídia é assíncrona:** um pool de 4 workers tira o `DownloadAny`+`Store` do
   caminho crítico do handler do whatsmeow (rajada de mídia não atrasa os textos).
-- **`events.Bus`**: `Publish` é não-bloqueante — assinante lento **perde**
-  evento (contador `BusDropped`). Entrega garantida é responsabilidade das
-  filas asynq, não do barramento.
+- **`events.Bus`**: publish sem lock (snapshot atômico das inscrições).
+  `Subscribe` = best-effort (canal cheio → descarta na hora, contador
+  `BusDropped`) — usado pelo WS. `SubscribeReliable(…, maxWait)` espera até
+  `maxWait` (250ms) o canal abrir antes de descartar — usado por **webhook**
+  e **inbox**, onde perder evento é grave. A garantia real de entrega ainda
+  é das filas asynq; o `maxWait` só reduz drop sob pico.
 - **`webhook.Dispatcher`**: pool de 6 workers, cache de config por sessão
   (TTL 5s), dedupe de entrega por URL, `TaskID` = `eventID|sha1(url)` (asynq
   não duplica). Assinatura: `X-Webhook-Signature: sha256=<hmac>`. O payload

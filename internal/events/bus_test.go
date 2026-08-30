@@ -1,6 +1,9 @@
 package events
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestMatch(t *testing.T) {
 	cases := []struct {
@@ -58,5 +61,49 @@ func TestBusDeliversAndDrops(t *testing.T) {
 	}
 	if got != 2 {
 		t.Fatalf("recebeu %d eventos, esperava 2 (buffer cheio derruba o resto)", got)
+	}
+}
+
+func TestSubscribeReliableEsperaSlot(t *testing.T) {
+	b := NewBus(nil)
+	ch, cancel := b.SubscribeReliable("r", "*", 1, 300*time.Millisecond)
+	defer cancel()
+
+	b.Publish(Event{Name: "a"}) // ocupa o buffer (1)
+
+	// um consumidor abre espaço depois de 50ms
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		<-ch
+	}()
+
+	start := time.Now()
+	b.Publish(Event{Name: "b"}) // deveria ESPERAR o slot, não descartar
+	waited := time.Since(start)
+
+	if waited < 30*time.Millisecond {
+		t.Fatalf("Publish não esperou (%.0fms)", float64(waited.Milliseconds()))
+	}
+	if got := <-ch; got.Name != "b" {
+		t.Fatalf("perdeu o evento 'b', recebeu %q", got.Name)
+	}
+}
+
+func TestSubscribeReliableDesisteAposMaxWait(t *testing.T) {
+	b := NewBus(nil)
+	ch, cancel := b.SubscribeReliable("r", "*", 1, 40*time.Millisecond)
+	defer cancel()
+
+	b.Publish(Event{Name: "a"}) // buffer cheio, ninguém consome
+	start := time.Now()
+	b.Publish(Event{Name: "b"}) // espera 40ms e desiste
+	if waited := time.Since(start); waited < 30*time.Millisecond {
+		t.Fatalf("não respeitou o maxWait (%v)", waited)
+	}
+	<-ch // só o "a"
+	select {
+	case e := <-ch:
+		t.Fatalf("não devia ter mais nada, veio %q", e.Name)
+	default:
 	}
 }

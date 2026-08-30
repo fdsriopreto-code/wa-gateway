@@ -26,7 +26,7 @@ func New(db *store.Store, log *slog.Logger) *Consumer { return &Consumer{db: db,
 // Run consome message.* ate o contexto ser cancelado. Usa um pool pequeno
 // para que a latencia do Postgres nao serialize a ingestao.
 func (c *Consumer) Run(ctx context.Context, bus *events.Bus) {
-	ch, cancel := bus.Subscribe("inbox", "message.*", 8192)
+	ch, cancel := bus.SubscribeReliable("inbox", "message.*", 8192, 250*time.Millisecond)
 	defer cancel()
 
 	const workers = 4

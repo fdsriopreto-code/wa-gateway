@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Matcher aceita "*" (tudo), "prefixo.*" (namespace) ou nome exato.
@@ -33,15 +34,18 @@ type subscription struct {
 	name    string
 	pattern string
 	ch      chan Event
+	maxWait time.Duration // >0: Publish espera até isso antes de descartar
 	dropped atomic.Uint64
 }
 
-// Bus e um pub/sub in-process. Publish nunca bloqueia: assinante lento
-// perde eventos e incrementa um contador.
+// Bus e um pub/sub in-process. Publish nao bloqueia por assinante best-effort
+// (perde evento + incrementa contador); para assinantes "confiaveis"
+// (SubscribeReliable) espera ate maxWait antes de descartar.
 type Bus struct {
-	log  *slog.Logger
-	mu   sync.RWMutex
-	subs map[*subscription]struct{}
+	logger *slog.Logger
+	mu     sync.RWMutex
+	subs   map[*subscription]struct{}
+	snap   atomic.Pointer[[]*subscription] // cópia imutável p/ Publish sem lock
 
 	// OnDrop, se definido, e chamado quando um assinante perde um evento.
 	OnDrop func(subscriber string)
@@ -50,24 +54,52 @@ type Bus struct {
 }
 
 func NewBus(log *slog.Logger) *Bus {
-	return &Bus{log: log, subs: make(map[*subscription]struct{})}
+	b := &Bus{logger: log, subs: make(map[*subscription]struct{})}
+	empty := make([]*subscription, 0)
+	b.snap.Store(&empty)
+	return b
 }
 
-// Subscribe registra um assinante. name so serve para logs/metricas.
-// Retorna o canal de leitura e uma funcao de cancelamento.
+func (b *Bus) rebuildSnapshot() {
+	list := make([]*subscription, 0, len(b.subs))
+	for s := range b.subs {
+		list = append(list, s)
+	}
+	b.snap.Store(&list)
+}
+
+// Subscribe registra um assinante best-effort (evento descartado na hora se o
+// canal estiver cheio). name so serve para logs/metricas.
 func (b *Bus) Subscribe(name, pattern string, buffer int) (<-chan Event, func()) {
+	return b.subscribe(name, pattern, buffer, 0)
+}
+
+// SubscribeReliable e como Subscribe, mas Publish espera ate maxWait o canal
+// abrir espaço antes de descartar — para consumidores onde perder evento é
+// grave (webhook, persistencia). O custo é uma pausa curta no publicador sob
+// pico sustentado.
+func (b *Bus) SubscribeReliable(name, pattern string, buffer int, maxWait time.Duration) (<-chan Event, func()) {
+	if maxWait <= 0 {
+		maxWait = 250 * time.Millisecond
+	}
+	return b.subscribe(name, pattern, buffer, maxWait)
+}
+
+func (b *Bus) subscribe(name, pattern string, buffer int, maxWait time.Duration) (<-chan Event, func()) {
 	if buffer <= 0 {
 		buffer = 1024
 	}
-	s := &subscription{name: name, pattern: pattern, ch: make(chan Event, buffer)}
+	s := &subscription{name: name, pattern: pattern, ch: make(chan Event, buffer), maxWait: maxWait}
 	b.mu.Lock()
 	b.subs[s] = struct{}{}
+	b.rebuildSnapshot()
 	b.mu.Unlock()
 
 	return s.ch, func() {
 		b.mu.Lock()
 		if _, ok := b.subs[s]; ok {
 			delete(b.subs, s)
+			b.rebuildSnapshot()
 			close(s.ch)
 		}
 		b.mu.Unlock()
@@ -78,23 +110,31 @@ func (b *Bus) Publish(e Event) {
 	if b.OnPublish != nil {
 		b.OnPublish(e.Name)
 	}
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	for s := range b.subs {
+	for _, s := range *b.snap.Load() {
 		if !Match(s.pattern, e.Name) {
 			continue
 		}
 		select {
 		case s.ch <- e:
+			continue
 		default:
-			n := s.dropped.Add(1)
-			if b.OnDrop != nil {
-				b.OnDrop(s.name)
+		}
+		if s.maxWait > 0 {
+			t := time.NewTimer(s.maxWait)
+			select {
+			case s.ch <- e:
+				t.Stop()
+				continue
+			case <-t.C:
 			}
-			if n%100 == 1 && b.log != nil {
-				b.log.Warn("assinante lento, evento descartado",
-					"subscriber", s.name, "dropped_total", n)
-			}
+		}
+		n := s.dropped.Add(1)
+		if b.OnDrop != nil {
+			b.OnDrop(s.name)
+		}
+		if n%100 == 1 && b.logger != nil {
+			b.logger.Warn("assinante lento, evento descartado",
+				"subscriber", s.name, "dropped_total", n)
 		}
 	}
 }
