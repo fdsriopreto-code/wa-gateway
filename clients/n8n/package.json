@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-wa-gateway",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Node n8n para o wa-gateway — API HTTP multi-sessão de WhatsApp",
   "keywords": ["n8n-community-node-package", "n8n", "whatsapp", "wa-gateway", "whatsapp-api"],
   "license": "MIT",
@@ -32,7 +32,8 @@
       "dist/nodes/WaGatewayTrigger/WaGatewayTrigger.node.js",
       "dist/nodes/WaGatewayQueue/WaGatewayQueue.node.js",
       "dist/nodes/WaGatewayPause/WaGatewayPause.node.js",
-      "dist/nodes/WaGatewayAgent/WaGatewayAgent.node.js"
+      "dist/nodes/WaGatewayAgent/WaGatewayAgent.node.js",
+      "dist/nodes/WaGatewayOtp/WaGatewayOtp.node.js"
     ]
   },
   "dependencies": {

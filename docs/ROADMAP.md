@@ -48,9 +48,10 @@ Atualizado em **2026-08-30**.
 - **Console web** embarcado (SPA vanilla, sem build): sessões + QR ao vivo,
   chat, playground de endpoints, eventos ao vivo, monitor, API keys, editor
   visual de webhooks estilo Evolution.
-- **Node n8n** (`n8n-nodes-wa-gateway`, publicado): 4 nós —
-  ação, Trigger roteador (7 saídas por tipo, baixa mídia), Fila (debounce),
-  Pausa do bot.
+- **Node n8n** (`n8n-nodes-wa-gateway`, publicado): 6 nós — ação, Trigger
+  roteador (7 saídas por tipo, baixa mídia), Fila (debounce), Pausa do bot,
+  Agente de IA (modelo/memória/tools do n8n), **OTP** (enviar/conferir código,
+  saídas Válido/Inválido).
 - Fila de saída com *pacing* anti-ban (slot por sessão, jitter, teto diário).
 - **Rate limit por chave de API** — token bucket no Redis, `429` + `Retry-After`
   + `X-RateLimit-*`; `RATE_LIMIT_RPS` (default 20), chave-mestra isenta.

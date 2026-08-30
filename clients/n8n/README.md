@@ -2,7 +2,7 @@
 
 Node comunitário do n8n para o [wa-gateway](../../README.md).
 
-Cinco nodes:
+Seis nodes:
 
 | Node | Pra quê |
 |---|---|
@@ -11,6 +11,7 @@ Cinco nodes:
 | **wa-gateway Fila (debounce)** | Agrupa mensagens picadas por contato (Redis). `Enfileirar` → `Wait` → `Coletar`: se chegou mensagem nova na janela, sai por **Superado** (essa execução desiste); senão sai por **Continuar** com a fila unificada em `text` / `messages`. `Cancelar` descarta lotes pendentes depois que o bot respondeu. Precisa da credencial `Redis` do n8n. |
 | **wa-gateway Pausa do bot** | Handoff humano por contato (Redis + TTL). `Pausar` quando você responde manualmente (`fromMe`), `Verificar` antes de deixar a IA responder (saídas **Ativo** / **Pausado**), `Retomar` pra devolver pro bot. Precisa da credencial `Redis` do n8n. |
 | **wa-gateway Agente** | Agente de IA **nativo do WhatsApp**. Conecte o **Chat Model** (OpenAI/Anthropic/Gemini/Ollama…) e, opcionalmente, um nó de **Memória** (chave = chatId) e nós de **Ferramenta** — reaproveita as credenciais que você já tem no n8n. Traz **ferramentas de WhatsApp embutidas** (`enviar_imagem`/`_audio`/`_documento`/`_localizacao`/`_botoes`, `checar_numero`, `listar_grupos`, `buscar_historico`, `escalar_para_humano`), **entende imagem/áudio recebidos** (baixa e manda pro modelo — visão/áudio) e **responde sozinho** pelo wa-gateway (com "digitando…"). Saídas: **Resposta · Handoff · Erro**. |
+| **wa-gateway OTP** | Código de verificação de número por WhatsApp. `Enviar código` (o gateway gera, guarda o hash no Redis, manda — com `brand`, `template`, validade e **callback de entrega** opcionais), `Conferir código` (saídas **Válido** / **Inválido**, com `reason` e `attemptsLeft`) e `Cancelar código`. Rate limit / código errado / envio falho saem por **Falha / Inválido** sem quebrar o fluxo. Se o *seu* app já gera e guarda o código, não precisa deste node — use **wa-gateway** (Enviar texto) com `callbackUrl`. |
 
 ## Instalar
 
@@ -63,3 +64,14 @@ wa-gateway Trigger ──▶ fromMe? ──true──▶ wa-gateway Pausa (Pausa
 `Coletar` entrega `{{ $json.text }}` (mensagens da janela unidas) pro agente. O `Cancelar` no fim aborta lotes que ainda estejam na janela de 15s.
 
 **Anti-ban:** marque *Enfileirar* nos envios pra passar pela fila com pacing por número.
+
+**OTP num fluxo só:**
+```
+Webhook do seu app ──▶ wa-gateway OTP (Enviar código, to = {{$json.phone}}, brand = "MeuApp")
+                         └─ Sucesso ─▶ responde { id } pro app
+
+Webhook "conferir" ──▶ wa-gateway OTP (Conferir código, to = {{$json.phone}}, code = {{$json.code}})
+                         ├─ Válido   ─▶ marca telefone verificado
+                         └─ Inválido ─▶ devolve reason / attemptsLeft
+```
+
