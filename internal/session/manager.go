@@ -248,6 +248,12 @@ func (m *Manager) OTPConfig(name string) *OTPConfig {
 	return m.sessionConfig(name).OTP
 }
 
+// LeadsEnabled diz se a sessão coleta métricas de lead/CRM (default: sim).
+func (m *Manager) LeadsEnabled(name string) bool {
+	c := m.sessionConfig(name).Leads
+	return c == nil || c.Enabled == nil || *c.Enabled
+}
+
 func (m *Manager) sessionBehavior(name string) engine.AutoBehavior {
 	c := m.sessionConfig(name)
 	return engine.AutoBehavior{AutoRead: c.AutoRead, AutoOnline: c.AutoOnline}

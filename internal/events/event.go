@@ -25,6 +25,9 @@ const (
 	SessionUnhealthy = "session.unhealthy" // payload: {status, since, forSeconds}
 	SessionHealthy   = "session.healthy"   // payload: {status} — recuperou
 
+	LeadNew   = "lead.new"   // 1º contato de um contato novo — payload: {chatId, phone, source, firstMessage}
+	LeadStale = "lead.stale" // lead esperando resposta há mais que o limiar — payload: {chatId, phone, waitingSeconds}
+
 	Message         = "message"     // RECEBIDA (nao fromMe), payload normalizado
 	MessageAny      = "message.any" // qualquer, inclusive fromMe, payload normalizado
 	MessageAck      = "message.ack" // recibo entrega/leitura, payload normalizado

@@ -78,7 +78,7 @@ pub/sub de WebSocket. **Um binário** — o console web é embutido via `//go:em
 | `internal/httpapi` | REST, `/mcp`, `/openapi.json`, `/docs`, console SPA | `httpapi.NewRouter` |
 | `internal/auth` | API key (chave-mestra + tabela `api_keys` com Argon2id) + middleware | `auth.New` |
 | `internal/observability` | logger slog, métricas Prometheus | `NewLogger`, `metrics.go` |
-| `migrations/` | SQL goose, embarcado com `//go:embed` | `0001…0008` |
+| `migrations/` | SQL goose, embarcado com `//go:embed` | `0001…0009` |
 
 ### 2.1 A interface `Engine`
 
@@ -190,6 +190,17 @@ sequenceDiagram
 - **`outbox.Dispatch`** mapeia `Kind` → método da engine. Kinds: `text`, `image`,
   `file`, `video`, `audio`, `sticker`, `location`, `contact`, `poll`, `forward`,
   `reaction`, `delete`, `edit`.
+- **Leads / CRM** (`internal/leads`, [CRM.md](CRM.md)): consumidor do stream
+  (`message.any` + `message.ack`, grupo `leads`) que faz um upsert por
+  contato na tabela `leads` (migração 0009) — toda a matemática (contadores,
+  `waiting_since`, soma pra tempo médio de resposta, transição de status) roda
+  num único `INSERT … ON CONFLICT DO UPDATE` (race-safe). `RETURNING (xmax=0)`
+  diz se o lead é novo → emite `lead.new`. `SweepStale` (60s) faz um
+  `UPDATE … RETURNING` atômico e emite `lead.stale`. Atribuição
+  (`internal/leads/attribution.go`): `adReferral` vem das engines
+  (whatsmeow `contextInfo.externalAdReply`, Cloud `referral`), UTM/click-ids
+  saem do texto da 1ª mensagem. `GET/PATCH /api/{s}/leads[/{chatId}]`,
+  `GET /api/{s}/leads/stats`.
 - **StatusCallback por mensagem** (`internal/ackcb`): `callbackUrl` nos envios
   diretos (`sendText`/`send*`/`otp/send`) → `Arm` grava `wa:ackcb:<s>:<msgId>`
   (TTL 15m); um consumer do stream `message.ack` (grupo `ackcb`) faz **1 POST**
@@ -336,6 +347,7 @@ Tudo por env var. Padrões entre `()`.
 | `DEFAULT_ENGINE` (`wa-gateway`) | engine das sessões novas |
 | `WEBHOOK_TIMEOUT` (`15s`) / `WEBHOOK_MAX_ATTEMPTS` (`15`) | entrega de webhook |
 | `SESSION_UNHEALTHY_AFTER` (`2m`) | sessão viva fora de `WORKING` por mais que isso → evento `session.unhealthy` (+ `session.healthy` ao recuperar). `0` desliga |
+| `LEADS` (`on`) / `LEAD_STALE_AFTER` (`2h`) | coleta de leads/CRM por contato; limiar do evento `lead.stale`. Ver [CRM.md](CRM.md). Override: `config.leads.enabled` |
 | `OUTBOX_MIN_INTERVAL` (`3s`) / `OUTBOX_JITTER` (`2s`) / `OUTBOX_DAILY_LIMIT` (`0`=∞) | pacing global da fila de saída |
 | `MESSAGE_STORE` (`on`) | persistir mensagens/chats. `off` desliga o `inbox` |
 | `MEDIA_BACKEND` (`none` / `s3`) | ingestão de mídia |
@@ -371,6 +383,7 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
   "autoRead": false,    // marca recebidas como lidas (recibo azul)
   "autoOnline": false,  // mantém presença "available" após conectar
   "otp": { "brand": "ACME", "ttlSeconds": 600, "maxAttempts": 4, "hourlyCap": 8 }, // padrões do /otp/send — ver OTP.md
+  "leads": { "enabled": false }, // desliga a coleta de lead/CRM só desta sessão
   "autoReply": {        // resposta automática p/ conversas 1:1 (grupos ignorados)
     "enabled": true,
     "greeting": "Olá! Já retornamos.",   // 1x por contato (re-envia após greetingCooldownH, default 24)

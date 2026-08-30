@@ -160,6 +160,23 @@ Atualizado em **2026-08-30**.
   coluna única < 560px, QR/imagens com `max-width:100%`, tabs e barras que
   rolam em vez de cortar, toasts full-width no mobile, `env(safe-area-inset)`.
   Blocos de curl/JSON viraram `<details>` recolhíveis ("ver comando").
+- **Leads / CRM** (`internal/leads` + migração 0009, [CRM.md](CRM.md)) —
+  um lead por `(sessão, contato)` com métricas prontas pra CRM: status
+  (`new` / `waiting_us` / `waiting_them` / `closed`), tempo sem resposta,
+  última recebida / enviada / **lida por eles**, contagens, tempo médio de
+  resposta. Consumidor do stream (`message.any` + `message.ack`); a matemática
+  toda num `INSERT … ON CONFLICT DO UPDATE` (race-safe). **Atribuição de
+  origem** no 1º contato: `adReferral` (anúncio Click-to-WhatsApp — id, url,
+  `ctwa_clid`; extraído pelas duas engines), `utm` / `clickIds` / `params`
+  parseados do texto da 1ª mensagem. `GET /api/{s}/leads` (filtros status /
+  stage / tag / q / source / sort), `GET .../leads/{chatId}`,
+  `PATCH .../leads/{chatId}` (stage/owner/tags/notes/status),
+  `GET .../leads/stats` (funil). Eventos `lead.new` / `lead.stale`
+  (`LEAD_STALE_AFTER`, sweep de 60s, dispara uma vez). MCP: `list_leads` /
+  `get_lead` / `update_lead`. Console: view **Leads / CRM** (funil + tabela +
+  drawer com origem e campos editáveis). Testes de atribuição.
+  Follow-ups: sem limiar de stale por sessão; sem histórico de mudança de
+  stage; `last_read_by_them_at` não distingue 100% qual lado leu.
 - CI completo + release automático do node n8n por tag.
 
 ---

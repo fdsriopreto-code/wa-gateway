@@ -86,6 +86,13 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		r.Post("/api/{session}/labels/message", d.labelMessage)
 
 		// --- dashboard / auditoria ---
+		// --- leads / CRM ---
+		r.Get("/api/{session}/leads", d.listLeads)
+		r.Get("/api/{session}/leads/stats", d.leadStats)
+		r.Get("/api/{session}/leads/{chatId}", d.getLead)
+		r.Patch("/api/{session}/leads/{chatId}", d.patchLead)
+		r.Post("/api/{session}/leads/{chatId}", d.patchLead)
+
 		// --- OTP (código de verificação) ---
 		r.Post("/api/{session}/otp/send", d.otpSend)
 		r.Post("/api/{session}/otp/verify", d.otpVerify)

@@ -245,6 +245,8 @@ const EVENT_CATALOG=[
   {g:"Etiquetas & sistema",items:[
     ["label.chat","chat etiquetado / desetiquetado"],
     ["label.edit","etiqueta criada / editada / apagada"],
+    ["lead.new","1º contato de um lead novo (traz a origem)"],
+    ["lead.stale","lead esperando resposta há muito tempo"],
     ["webhook.exhausted","uma entrega de webhook esgotou as tentativas"],
   ]},
 ];
@@ -1572,6 +1574,128 @@ views.campaigns={title:"Campanhas",async render(root){
   }
 }};
 
+/* ═══ Leads / CRM ═══ */
+const leadDur=(s)=>{s=+s||0;if(s<60)return"agora";if(s<3600)return Math.floor(s/60)+"min";if(s<86400){const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h+"h"+(m?" "+m+"min":"");}return Math.floor(s/86400)+"d";};
+const leadStatus={waiting_us:["aguardando você","bad"],waiting_them:["aguardando cliente","warn"],new:["novo","ok"],closed:["fechado",""]};
+function leadStatusPill(st){const[l,c]=leadStatus[st]||[st,""];return h("span",{class:"pill "+c},h("span",{class:"dot"}),l);}
+function leadSrc(src){
+  let s={};try{s=typeof src==="string"?JSON.parse(src||"{}"):(src||{});}catch{}
+  if(s.adReferral)return h("span",{class:"cchip",title:s.adReferral.sourceUrl||s.adReferral.sourceId||""},"📢 anúncio");
+  if(s.utm)return h("span",{class:"cchip",title:JSON.stringify(s.utm)},"🔗 "+(s.utm.utm_source||s.utm.utm_campaign||"utm"));
+  if(s.clickIds)return h("span",{class:"cchip",title:JSON.stringify(s.clickIds)},"🔗 "+Object.keys(s.clickIds)[0]);
+  if(s.params)return h("span",{class:"cchip",title:JSON.stringify(s.params)},"🔗 "+(s.params.ref||s.params.source||"ref"));
+  return h("span",{class:"faint"},"—");
+}
+
+views.leads={title:"Leads / CRM",async render(root){
+  await loadSessions();
+  const page=h("div",{class:"page"}); root.append(page);
+  page.append(h("div",{class:"page-head"},h("div",{},h("h2",{},"Leads / CRM"),
+    h("p",{},"Cada contato vira um lead com métricas de conversa e a origem (anúncio, UTM, link). Alimenta seu CRM por API."))));
+  const sel=sessionSelect("l-sess");
+  const stEl=h("select",{},[["","todos os status"],["waiting_us","aguardando você"],["waiting_them","aguardando cliente"],["new","novos"],["closed","fechados"]].map(([v,l])=>h("option",{value:v},l)));
+  const sortEl=h("select",{},[["updated","mais recentes"],["waiting","esperando há mais tempo"],["recent","último contato"]].map(([v,l])=>h("option",{value:v},l)));
+  const srcEl=h("select",{},[["","toda origem"],["ad","de anúncio"],["utm","de UTM"],["any","com origem"]].map(([v,l])=>h("option",{value:v},l)));
+  const qEl=h("input",{placeholder:"buscar nome / número / mensagem",style:"max-width:240px"});
+  const stats=h("div",{class:"kgrid",style:"margin-bottom:14px"}); page.append(stats);
+  page.append(h("div",{class:"card pad",style:"margin-bottom:14px"},h("div",{class:"frow",style:"align-items:flex-end"},
+    h("div",{class:"field"},h("label",{},"sessão"),sel),
+    h("div",{class:"field"},h("label",{},"status"),stEl),
+    h("div",{class:"field"},h("label",{},"ordenar"),sortEl),
+    h("div",{class:"field"},h("label",{},"origem"),srcEl),
+    h("div",{class:"field"},h("label",{},"busca"),qEl))));
+  const body=h("div",{}); page.append(body);
+
+  const loadStats=async(s)=>{
+    try{const st=await apiData("GET",`/api/${encodeURIComponent(s)}/leads/stats`);
+      clear(stats);
+      [["inbox","Leads",st.total,true],
+       ["alert","Aguardando você",st.waitingUs,!!st.waitingUs],
+       ["clock","Sem resposta (limite)",st.stale,!!st.stale],
+       ["send","De anúncio",st.fromAds,!!st.fromAds],
+       ["link","De UTM",st.fromUtm,!!st.fromUtm],
+       ["chat","Resp. média",st.avgResponseSeconds?leadDur(st.avgResponseSeconds):"—",!!st.avgResponseSeconds],
+      ].forEach(([i,k,v,on])=>stats.append(h("div",{class:"kpi"+(on&&v?" on":"")},
+        h("div",{class:"ir"},ic(i,"sm")),h("div",{class:"k"},k),h("div",{class:"v"+(v?"":" dim")},nfmt(v)))));
+    }catch(e){clear(stats);}
+  };
+  const load=async()=>{
+    const s=sel.value; if(!s){clear(body);body.append(empty("inbox","selecione uma sessão"));return;}
+    LS.sess=s; loadStats(s);
+    const qs=new URLSearchParams({sort:sortEl.value});
+    if(stEl.value)qs.set("status",stEl.value);
+    if(srcEl.value)qs.set("source",srcEl.value);
+    if(qEl.value.trim())qs.set("q",qEl.value.trim());
+    try{
+      const rows=await apiData("GET",`/api/${encodeURIComponent(s)}/leads?`+qs);
+      clear(body);
+      body.append(table([
+        {h:"contato",get:l=>h("div",{},h("div",{style:"font-weight:600"},l.pushName||l.phone),
+          l.pushName?h("div",{class:"mono faint",style:"font-size:11px"},l.phone):null)},
+        {h:"status",get:l=>leadStatusPill(l.status)},
+        {h:"última mensagem",get:l=>h("span",{class:"muted"},(l.lastMessageFromMe?"↗ ":"↘ ")+trunc(l.lastMessage||"",40))},
+        {h:"esperando",get:l=>l.status==="waiting_us"?h("span",{style:"color:var(--red);font-weight:600"},leadDur(l.waitingSeconds)):h("span",{class:"faint"},"—")},
+        {h:"origem",get:leadSrc},
+        {h:"in/out",get:l=>h("span",{class:"mono faint"},l.inboundCount+"/"+l.outboundCount)},
+        {h:"atividade",get:l=>h("span",{class:"muted",title:fmtTime(l.updatedAt)},fmtRel(l.updatedAt))},
+        {h:"",get:l=>h("button",{class:"btn ghost sm",onclick:()=>leadModal(s,l,load)},"abrir")},
+      ],rows,"nenhum lead ainda — mensagens recebidas viram leads automaticamente"));
+    }catch(e){clear(body);body.append(empty("alert",e.message));}
+  };
+  [sel,stEl,sortEl,srcEl].forEach(el=>el.addEventListener("change",load));
+  let qt=null; qEl.addEventListener("input",()=>{clearTimeout(qt);qt=setTimeout(load,350);});
+  const poll=setInterval(load,6000);
+  addEventListener("hashchange",()=>clearInterval(poll),{once:true});
+  load();
+}};
+
+function leadModal(session,l,onSave){
+  let src={};try{src=typeof l.source==="string"?JSON.parse(l.source||"{}"):(l.source||{});}catch{}
+  const stage=h("input",{value:l.stage||"",placeholder:"ex.: qualificado, proposta, ganho…"});
+  const owner=h("input",{value:l.owner||"",placeholder:"responsável"});
+  const tags=h("input",{value:(l.tags||[]).join(", "),placeholder:"quente, whatsapp, promo"});
+  const notes=h("textarea",{rows:3,value:l.notes||""});
+  const metric=(k,v)=>kv(k,v==null||v===""?h("span",{class:"faint"},"—"):(v&&v.nodeType?v:String(v)));
+  const save=async(patch,btn)=>{
+    if(btn)btn.disabled=true;
+    try{await apiData("PATCH",`/api/${encodeURIComponent(session)}/leads/${encodeURIComponent(l.chatId)}`,patch);
+      ok("lead atualizado");m.close();onSave&&onSave();}
+    catch(e){fail(e);}finally{if(btn)btn.disabled=false;}
+  };
+  const m=modal("Lead — "+(l.pushName||l.phone),l.chatId,h("div",{},
+    h("div",{class:"card pad",style:"margin-bottom:12px"},
+      metric("status",leadStatusPill(l.status)),
+      metric("esperando resposta há",l.status==="waiting_us"?leadDur(l.waitingSeconds):"—"),
+      metric("1º contato",fmtTime(l.firstContactAt)),
+      metric("última recebida",l.lastInboundAt?fmtTime(l.lastInboundAt):"—"),
+      metric("última enviada",l.lastOutboundAt?fmtTime(l.lastOutboundAt):"—"),
+      metric("lida por eles",l.lastReadByThemAt?fmtTime(l.lastReadByThemAt):"—"),
+      metric("mensagens (recebidas / enviadas)",l.inboundCount+" / "+l.outboundCount),
+      metric("tempo médio de resposta",l.avgResponseSeconds?leadDur(l.avgResponseSeconds):"—"),
+      metric("última mensagem",h("span",{class:"muted"},(l.lastMessageFromMe?"↗ ":"↘ ")+(l.lastMessage||"")))),
+    (src.adReferral||src.utm||src.clickIds||src.params||src.firstMessage)?h("div",{class:"card pad",style:"margin-bottom:12px;background:var(--s1)"},
+      h("div",{class:"sec-title",style:"margin-top:0"},ic("link","sm"),"Origem do lead"),
+      src.adReferral?metric("anúncio (id / url)",h("span",{class:"mono wrap"},(src.adReferral.sourceId||"")+(src.adReferral.sourceUrl?"  ·  "+src.adReferral.sourceUrl:""))):null,
+      src.adReferral&&src.adReferral.ctwaClid?metric("ctwa_clid",h("span",{class:"mono wrap"},src.adReferral.ctwaClid)):null,
+      src.adReferral&&src.adReferral.headline?metric("headline",src.adReferral.headline):null,
+      src.utm?metric("UTM",h("span",{class:"mono wrap"},Object.entries(src.utm).map(([k,v])=>k+"="+v).join("  "))):null,
+      src.clickIds?metric("click id",h("span",{class:"mono wrap"},Object.entries(src.clickIds).map(([k,v])=>k+"="+v).join("  "))):null,
+      src.params?metric("params",h("span",{class:"mono wrap"},Object.entries(src.params).map(([k,v])=>k+"="+v).join("  "))):null,
+      src.firstMessage?metric("1ª mensagem",h("span",{class:"muted"},src.firstMessage)):null):null,
+    h("div",{class:"frow"},
+      h("div",{class:"field"},h("label",{},"etapa do funil"),stage),
+      h("div",{class:"field"},h("label",{},"responsável"),owner)),
+    h("div",{class:"field"},h("label",{},"tags (vírgula)"),tags),
+    h("div",{class:"field"},h("label",{},"anotações"),notes),
+    h("div",{class:"btn-row",style:"margin-top:14px"},
+      h("button",{class:"btn",onclick:e=>save({stage:stage.value.trim(),owner:owner.value.trim(),
+        tags:tags.value.split(",").map(x=>x.trim()).filter(Boolean),notes:notes.value},e.currentTarget)},ic("check","sm"),"Salvar"),
+      l.status==="closed"
+        ?h("button",{class:"btn ghost",onclick:e=>save({status:"waiting_them"},e.currentTarget)},"Reabrir")
+        :h("button",{class:"btn danger ghost",onclick:e=>save({status:"closed"},e.currentTarget)},"Fechar lead"))),
+    {wide:true});
+}
+
 views.keys={title:"API keys",async render(root){
   const page=h("div",{class:"page"}); root.append(page);
   page.append(h("div",{class:"page-head"},h("div",{},h("h2",{},"API keys"),h("p",{},"Chaves da tabela api_keys. A master do .env não aparece aqui."))));
@@ -1690,7 +1814,7 @@ function openPalette(){
 /* ═══════════════════════════════════════════════ shell */
 const NAV=[
   ["Principal",[["quickstart","play","Início rápido"],["overview","overview","Visão geral"],["sessions","sessions","Sessões"],["chat","chat","Chat"],["playground","playground","Playground"]]],
-  ["Observar",[["events","events","Eventos ao vivo"],["campaigns","send","Campanhas"],["monitor","monitor","Monitoramento"]]],
+  ["Observar",[["leads","inbox","Leads / CRM"],["events","events","Eventos ao vivo"],["campaigns","send","Campanhas"],["monitor","monitor","Monitoramento"]]],
   ["Config",[["keys","keys","API keys"],["settings","settings","Conexão"]]],
 ];
 function renderNav(active){

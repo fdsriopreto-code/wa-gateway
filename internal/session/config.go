@@ -24,6 +24,14 @@ type Config struct {
 	AutoReply *AutoReplyConfig `json:"autoReply,omitempty"`
 	// OTP: padroes do sistema de codigo de verificacao (/otp/send|verify).
 	OTP *OTPConfig `json:"otp,omitempty"`
+	// Leads: liga/desliga a coleta de metricas de CRM desta sessao (default on).
+	Leads *LeadsConfig `json:"leads,omitempty"`
+}
+
+// LeadsConfig controla a coleta de leads/CRM por sessao.
+type LeadsConfig struct {
+	// Enabled: nil/true = coleta (default). false = nao mantem lead desta sessao.
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // OTPConfig sao os padroes por sessao do sistema de OTP. Cada campo 0/"" cai

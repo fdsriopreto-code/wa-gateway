@@ -31,6 +31,11 @@ type Config struct {
 	// estado WORKING antes de emitir session.unhealthy. 0 desliga o monitor.
 	SessionUnhealthyAfter time.Duration
 
+	// Leads/CRM: coleta métricas de conversa por contato. LeadStaleAfter =
+	// tempo sem resposta antes de emitir lead.stale.
+	LeadsEnabled   bool
+	LeadStaleAfter time.Duration
+
 	// Pacing global da fila de saida (anti-ban). Sobrescrevivel por sessao
 	// via config.outbox.
 	OutboxMinInterval time.Duration
@@ -102,6 +107,8 @@ func Load() (Config, error) {
 		WebhookMaxAttempts: envInt("WEBHOOK_MAX_ATTEMPTS", 15),
 
 		SessionUnhealthyAfter: envDuration("SESSION_UNHEALTHY_AFTER", 2*time.Minute),
+		LeadsEnabled:          env("LEADS", "on") != "off",
+		LeadStaleAfter:        envDuration("LEAD_STALE_AFTER", 2*time.Hour),
 		OutboxMinInterval:     envDuration("OUTBOX_MIN_INTERVAL", 3*time.Second),
 		OutboxJitter:          envDuration("OUTBOX_JITTER", 2*time.Second),
 		OutboxDailyLimit:      envInt("OUTBOX_DAILY_LIMIT", 0),

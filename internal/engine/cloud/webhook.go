@@ -75,6 +75,16 @@ type waInMessage struct {
 		From string `json:"from"`
 		ID   string `json:"id"`
 	} `json:"context"`
+	// Referral: presente quando o lead veio de um anúncio Click-to-WhatsApp.
+	Referral *struct {
+		SourceURL  string `json:"source_url"`
+		SourceID   string `json:"source_id"`
+		SourceType string `json:"source_type"`
+		Headline   string `json:"headline"`
+		Body       string `json:"body"`
+		MediaType  string `json:"media_type"`
+		CtwaClid   string `json:"ctwa_clid"`
+	} `json:"referral"`
 }
 
 type waInMedia struct {
@@ -140,6 +150,18 @@ func (e *Engine) handleInbound(m *waInMessage, pushName string) {
 	}
 	if m.Context != nil && m.Context.ID != "" {
 		p["quotedId"] = m.Context.ID
+	}
+	if r := m.Referral; r != nil && (r.SourceID != "" || r.SourceURL != "" || r.CtwaClid != "") {
+		ref := map[string]any{}
+		for k, v := range map[string]string{
+			"sourceId": r.SourceID, "sourceType": r.SourceType, "sourceUrl": r.SourceURL,
+			"ctwaClid": r.CtwaClid, "headline": r.Headline, "body": r.Body, "mediaType": r.MediaType,
+		} {
+			if v != "" {
+				ref[k] = v
+			}
+		}
+		p["adReferral"] = ref
 	}
 
 	var media *waInMedia

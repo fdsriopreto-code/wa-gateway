@@ -10,7 +10,34 @@ import (
 	"time"
 
 	"wa-gateway/internal/engine"
+	"wa-gateway/internal/store"
 )
+
+// leadChat normaliza um chatId/número pra o formato do store (…@s.whatsapp.net).
+func leadChat(c string) string {
+	c = strings.TrimSpace(c)
+	if c == "" || strings.Contains(c, "@") {
+		return c
+	}
+	d := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, c)
+	if d == "" {
+		return c
+	}
+	return d + "@s.whatsapp.net"
+}
+
+func storeLeadFilter(a map[string]any) store.LeadFilter {
+	return store.LeadFilter{
+		Status: s(a, "status"), Stage: s(a, "stage"), Tag: s(a, "tag"),
+		Q: s(a, "q"), Source: s(a, "source"), Sort: s(a, "sort"),
+		Limit: int(f(a, "limit")),
+	}
+}
 
 func splitComma(s string) []string {
 	var out []string
@@ -513,6 +540,60 @@ var mcpTools = []mcpTool{
 				return nil, fmt.Errorf("OTP desligado")
 			}
 			return d.OTP.Verify(ctx, s(a, "session"), s(a, "to"), s(a, "id"), s(a, "code"))
+		},
+	},
+	{
+		name: "list_leads", desc: "Lista os leads (contatos) da sessão com métricas de CRM: status, tempo sem resposta, contagens e origem (anúncio/UTM). Ordene por 'waiting' pra ver quem está esperando há mais tempo.",
+		schema: obj([]string{"session"}, map[string]any{
+			"session": pstr("sessão"),
+			"status":  pstr("filtro: new | waiting_us | waiting_them | closed"),
+			"stage":   pstr("filtro pela etapa do funil"),
+			"tag":     pstr("filtro por tag"),
+			"q":       pstr("busca em telefone / nome / última mensagem"),
+			"source":  pstr("filtro de origem: ad | utm | any"),
+			"sort":    pstr("updated (padrão) | waiting | recent"),
+			"limit":   pnum("máx. (padrão 50)"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			return d.Store.ListLeads(ctx, s(a, "session"), storeLeadFilter(a))
+		},
+	},
+	{
+		name: "get_lead", desc: "Detalhe de um lead: últimas mensagens (recebida/enviada/lida por eles), tempo médio de resposta, quanto tempo está sem resposta, tags, etapa e a origem (source).",
+		schema: obj([]string{"session", "chatId"}, map[string]any{
+			"session": pstr("sessão"), "chatId": pstr("chatId (…@s.whatsapp.net) ou só o número"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			return d.Store.GetLead(ctx, s(a, "session"), leadChat(s(a, "chatId")))
+		},
+	},
+	{
+		name: "update_lead", desc: "Atualiza os campos de CRM de um lead: stage (etapa do funil), owner, tags (lista), notes, status (closed | waiting_us | waiting_them).",
+		schema: obj([]string{"session", "chatId"}, map[string]any{
+			"session": pstr("sessão"), "chatId": pstr("chatId ou número"),
+			"stage": pstr("etapa do funil"), "owner": pstr("responsável"),
+			"tags": parr("tags (substitui a lista)"), "notes": pstr("anotações"),
+			"status": pstr("closed | waiting_us | waiting_them"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			var p store.LeadPatch
+			if v, ok := a["stage"].(string); ok {
+				p.Stage = &v
+			}
+			if v, ok := a["owner"].(string); ok {
+				p.Owner = &v
+			}
+			if v, ok := a["notes"].(string); ok {
+				p.Notes = &v
+			}
+			if v, ok := a["status"].(string); ok {
+				p.Status = &v
+			}
+			if _, ok := a["tags"]; ok {
+				tg := slist(a, "tags")
+				p.Tags = &tg
+			}
+			return d.Store.UpdateLeadCRM(ctx, s(a, "session"), leadChat(s(a, "chatId")), p)
 		},
 	},
 	{

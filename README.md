@@ -17,6 +17,7 @@ teardown de Evolution API e WAHA — ver `../repos-analise/blueprint-wa-api-go.h
 | [docs/MCP.md](docs/MCP.md) | servidor MCP: ligar num agente, do zero ao "oi" só por MCP, as ferramentas |
 | [docs/CLOUD.md](docs/CLOUD.md) | motor **Cloud API oficial** da Meta: setup, webhook, botões/listas/templates |
 | [docs/OTP.md](docs/OTP.md) | **código de verificação** de número (estilo Verify): `send` / `verify`, limites, template |
+| [docs/CRM.md](docs/CRM.md) | **Leads / CRM**: métricas de conversa por contato + origem (anúncio Click-to-WhatsApp, UTM, click ids), `GET/PATCH /leads` |
 | `/docs` (no ar) | Swagger UI · `/openapi.json` é gerado de `internal/httpapi/spec.go` |
 
 ## Estado — Fase 1 (MVP)

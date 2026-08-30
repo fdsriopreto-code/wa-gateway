@@ -28,6 +28,7 @@ import (
 	"wa-gateway/internal/events"
 	"wa-gateway/internal/httpapi"
 	"wa-gateway/internal/inbox"
+	"wa-gateway/internal/leads"
 	"wa-gateway/internal/media"
 	"wa-gateway/internal/observability"
 	"wa-gateway/internal/otp"
@@ -214,6 +215,12 @@ func run() error {
 	go campaigns.Resume(ctx) // retoma campanhas que ficaram "running"
 	go autoreply.New(mgr, outQueue, rc, log, cfg.NodeID).Run(ctx, evStream)
 	go ackCB.Run(ctx, evStream) // StatusCallback por mensagem (callbackUrl)
+	if cfg.LeadsEnabled {
+		li := leads.New(st, mgr, bus, evStream, log, cfg.NodeID, cfg.LeadStaleAfter)
+		go li.Run(ctx, evStream)
+		go li.SweepStale(ctx)
+		log.Info("leads/CRM: on", "stale_after", cfg.LeadStaleAfter)
+	}
 
 	// ---- HTTP ----
 	authn := auth.New(cfg.APIKey, func(ctx context.Context, keyID string) (string, []string, error) {
@@ -250,6 +257,7 @@ func run() error {
 		AccessLog:   cfg.AccessLog,
 		RateRPS:     float64(cfg.RateLimitRPS),
 		RateBurst:   float64(cfg.RateLimitBurst),
+		LeadStale:   cfg.LeadStaleAfter,
 	}, authn)
 
 	srv := &http.Server{

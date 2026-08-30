@@ -100,6 +100,12 @@ var specEndpoints = []ep{
 	{"POST", "/api/{session}/media/purge", "Monitor", "Apagar TODAS as mídias da sessão (ou só olderThan)", map[string]any{"olderThan": "168h"}, nil},
 	{"GET", "/api/stats", "Monitor", "Estatísticas", nil, nil},
 
+	// ---- leads / CRM
+	{"GET", "/api/{session}/leads", "Leads", "Lista os leads (contatos) com métricas de conversa e origem", nil, []string{"status?", "stage?", "tag?", "q?", "source?", "sort?", "limit?", "offset?"}},
+	{"GET", "/api/{session}/leads/stats", "Leads", "Funil: contagem por status/etapa, tempo médio de resposta, leads de anúncio/UTM", nil, nil},
+	{"GET", "/api/{session}/leads/{chatId}", "Leads", "Detalhe de um lead (chatId ou só o número)", nil, nil},
+	{"PATCH", "/api/{session}/leads/{chatId}", "Leads", "Atualiza campos de CRM do lead", map[string]any{"stage": "qualificado", "owner": "ana", "tags": []string{"quente"}, "notes": "pediu proposta", "status": "closed"}, nil},
+
 	// ---- OTP (código de verificação)
 	{"POST", "/api/{session}/otp/send", "OTP", "Gera e envia um código de verificação por WhatsApp. callbackUrl (opcional) recebe um POST quando a msg for entregue.", map[string]any{"to": "5517999999999", "brand": "ACME", "codeLength": 6, "ttlSeconds": 300, "callbackUrl": "https://meuapp/otp-status", "callbackData": map[string]any{"userId": 123}}, nil},
 	{"POST", "/api/{session}/otp/verify", "OTP", "Confere o código (por to ou por id)", map[string]any{"to": "5517999999999", "code": "123456"}, nil},

@@ -57,6 +57,23 @@ func normalizeMessage(evt *waEvents.Message, includeRaw bool) map[string]any {
 		if len(ci.GetMentionedJID()) > 0 {
 			out["mentions"] = ci.GetMentionedJID()
 		}
+		// Click-to-WhatsApp / anúncio: o 1º contato de um lead que veio de um
+		// anúncio do Meta traz a origem aqui (id do anúncio, url, ctwa_clid).
+		if ad := ci.GetExternalAdReply(); ad != nil {
+			ref := map[string]any{}
+			putIf(ref, "sourceId", ad.GetSourceID())
+			putIf(ref, "sourceType", ad.GetSourceType())
+			putIf(ref, "sourceUrl", ad.GetSourceURL())
+			putIf(ref, "ctwaClid", ad.GetCtwaClid())
+			putIf(ref, "headline", ad.GetTitle())
+			putIf(ref, "body", ad.GetBody())
+			if mt := ad.GetMediaType(); mt != 0 {
+				ref["mediaType"] = mt.String()
+			}
+			if len(ref) > 0 {
+				out["adReferral"] = ref
+			}
+		}
 	}
 	if r := msg.GetReactionMessage(); r != nil {
 		out["reaction"] = r.GetText()
@@ -229,6 +246,12 @@ func classifyMessage(m *waProto.Message) (kind, body string) {
 		return "protocol", ""
 	default:
 		return "unknown", ""
+	}
+}
+
+func putIf(m map[string]any, k, v string) {
+	if v != "" {
+		m[k] = v
 	}
 }
 
