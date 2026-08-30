@@ -265,9 +265,9 @@ func (e *Engine) handleEvent(raw any) {
 		if !ev.Info.IsFromMe && e.behavior().AutoRead {
 			go e.autoRead(ev)
 		}
-		// midia (com sink ligado) vai pro pool: o download nao pode bloquear
+		// midia vai pro pool: baixar/guardar/transcrever nao pode bloquear
 		// este goroutine, senao atrasa as mensagens que vem atras.
-		if ev.Info.MediaType != "" && e.deps.Media != nil && e.deps.Media.Enabled() && e.deps.Media.WantStore(e.deps.Session) {
+		if ev.Info.MediaType != "" && e.wantMedia() {
 			e.mu.RLock()
 			jobs := e.mediaJobs
 			e.mu.RUnlock()
@@ -347,11 +347,18 @@ func (e *Engine) goOnline() {
 	_ = client.SendPresence(ctx, types.PresenceAvailable)
 }
 
-// attachMedia baixa+descriptografa a midia recebida e guarda no backend,
-// anexando um campo "media" no payload. Roda inline (com timeout) e so
-// quando ha um MediaSink habilitado.
+// wantStore diz se a midia recebida deve ser baixada e guardada.
+func (e *Engine) wantStore() bool {
+	return e.deps.Media != nil && e.deps.Media.Enabled() && e.deps.Media.WantStore(e.deps.Session)
+}
+
+// wantMedia: precisa baixar a midia (guardar OU transcrever/descrever).
+func (e *Engine) wantMedia() bool { return e.wantStore() || e.deps.Enrich != nil }
+
+// attachMedia baixa+descriptografa a midia recebida; guarda no backend (se
+// wantStore) e/ou transcreve/descreve (se Enrich). Roda inline, com timeout.
 func (e *Engine) attachMedia(p map[string]any, ev *waEvents.Message) {
-	if e.deps.Media == nil || !e.deps.Media.Enabled() || !e.deps.Media.WantStore(e.deps.Session) || ev.Info.MediaType == "" || ev.Message == nil {
+	if ev.Info.MediaType == "" || ev.Message == nil || !e.wantMedia() {
 		return
 	}
 	e.mu.RLock()
@@ -361,7 +368,7 @@ func (e *Engine) attachMedia(p map[string]any, ev *waEvents.Message) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	data, err := client.DownloadAny(ctx, ev.Message)
@@ -370,12 +377,19 @@ func (e *Engine) attachMedia(p map[string]any, ev *waEvents.Message) {
 		return
 	}
 	mime := mediaMime(unwrapMessage(ev.Message))
-	url, size, err := e.deps.Media.Store(ctx, e.deps.Session, ev.Info.ID, mime, data)
-	if err != nil {
-		p["media"] = map[string]any{"error": "store: " + err.Error()}
-		return
+	if e.wantStore() {
+		url, size, err := e.deps.Media.Store(ctx, e.deps.Session, ev.Info.ID, mime, data)
+		if err != nil {
+			p["media"] = map[string]any{"error": "store: " + err.Error()}
+		} else if url != "" {
+			p["media"] = map[string]any{"id": ev.Info.ID, "url": url, "mimetype": mime, "size": size}
+		}
 	}
-	p["media"] = map[string]any{"id": ev.Info.ID, "url": url, "mimetype": mime, "size": size}
+	if e.deps.Enrich != nil {
+		for k, v := range e.deps.Enrich(ctx, ev.Info.MediaType, mime, data) {
+			p[k] = v
+		}
+	}
 }
 
 func (e *Engine) emit(name string, payload any) { e.emitID("", name, payload) }

@@ -44,14 +44,22 @@ type Config struct {
 	MediaTTL time.Duration
 	// MediaGCInterval: de quanto em quanto tempo o coletor varre as vencidas.
 	MediaGCInterval time.Duration
-	S3Endpoint      string
-	S3Region        string
-	S3Bucket        string
-	S3AccessKey     string
-	S3SecretKey     string
-	S3UseSSL        bool
-	S3PathStyle     bool
-	S3PublicBaseURL string
+	// MediaEnrich: transcrever audio / descrever imagem recebidos por padrao.
+	// Sobrescrevivel por sessao em config.media.enrich. Precisa de AIAPIKey.
+	MediaEnrich bool
+	// IA compativel com OpenAI (transcricao + visao).
+	AIBaseURL         string
+	AIAPIKey          string
+	AITranscribeModel string
+	AIVisionModel     string
+	S3Endpoint        string
+	S3Region          string
+	S3Bucket          string
+	S3AccessKey       string
+	S3SecretKey       string
+	S3UseSSL          bool
+	S3PathStyle       bool
+	S3PublicBaseURL   string
 
 	// CORS: origens permitidas (CSV). Vazio = sem headers CORS (só same-origin).
 	// "*" libera qualquer origem (a API ainda exige X-Api-Key).
@@ -95,6 +103,11 @@ func Load() (Config, error) {
 		MediaBackend:       env("MEDIA_BACKEND", "none"),
 		MediaTTL:           envDuration("MEDIA_TTL", 0),
 		MediaGCInterval:    envDuration("MEDIA_GC_INTERVAL", 5*time.Minute),
+		MediaEnrich:        envBool("MEDIA_ENRICH", false),
+		AIBaseURL:          env("AI_BASE_URL", "https://api.openai.com/v1"),
+		AIAPIKey:           env("AI_API_KEY", ""),
+		AITranscribeModel:  env("AI_TRANSCRIBE_MODEL", "whisper-1"),
+		AIVisionModel:      env("AI_VISION_MODEL", "gpt-4o-mini"),
 		S3Endpoint:         env("S3_ENDPOINT", ""),
 		S3Region:           env("S3_REGION", "us-east-1"),
 		S3Bucket:           env("S3_BUCKET", ""),

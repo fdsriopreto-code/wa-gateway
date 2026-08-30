@@ -340,6 +340,10 @@ type Deps struct {
 	// Behavior devolve flags de comportamento automatico da sessao
 	// (auto-read, presenca online). Default (nil): tudo desligado.
 	Behavior func() AutoBehavior
+	// Enrich, se != nil, transcreve audio / descreve imagem recebidos e
+	// devolve campos extras pro payload (transcript / imageCaption). Recebe
+	// os bytes ja baixados. nil = desligado.
+	Enrich func(ctx context.Context, mediaType, mime string, data []byte) map[string]any
 	// StoredJID e o JID que esta sessao ja pareou (coluna sessions.jid),
 	// vazio para sessao nova. A engine usa para carregar o device certo
 	// quando varias sessoes compartilham o mesmo store.

@@ -192,13 +192,13 @@ func (e *Engine) handleInbound(m *waInMessage, pushName string) {
 		if media.Caption != "" {
 			p["body"] = media.Caption
 		}
-		// só baixa+guarda se a sessão não optou por descartar mídia.
-		if e.deps.Media != nil && e.deps.Media.Enabled() && e.deps.Media.WantStore(e.deps.Session) {
+		// vai pro pool se precisar baixar (guardar OU transcrever/descrever).
+		if e.wantMedia() {
 			e.mu.RLock()
 			jobs := e.mediaJobs
 			e.mu.RUnlock()
 			select {
-			case jobs <- mediaJob{p: p, mediaID: media.ID, mime: media.MimeType, msgID: m.ID}:
+			case jobs <- mediaJob{p: p, mediaID: media.ID, mime: media.MimeType, msgID: m.ID, mtype: m.Type}:
 				return // worker faz o fetch + emit
 			default:
 				// pool cheio/parado: emite já; o mediaMeta permite baixar
@@ -209,14 +209,20 @@ func (e *Engine) handleInbound(m *waInMessage, pushName string) {
 	e.emitMessage(p)
 }
 
-// attachMedia baixa a mídia e guarda no sink; anexa "media" no payload.
-func (e *Engine) attachMedia(p map[string]any, mediaID, mime, msgID string) {
-	if e.deps.Media == nil || !e.deps.Media.Enabled() {
+func (e *Engine) wantStore() bool {
+	return e.deps.Media != nil && e.deps.Media.Enabled() && e.deps.Media.WantStore(e.deps.Session)
+}
+func (e *Engine) wantMedia() bool { return e.wantStore() || e.deps.Enrich != nil }
+
+// attachMedia baixa a mídia; guarda no sink (se wantStore) e/ou
+// transcreve/descreve (se Enrich).
+func (e *Engine) attachMedia(p map[string]any, mediaID, mime, msgID, mtype string) {
+	if !e.wantMedia() {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
 	data, m, err := e.fetchMedia(ctx, mediaID)
-	cancel()
 	if err != nil {
 		p["media"] = map[string]any{"error": err.Error()}
 		return
@@ -224,12 +230,19 @@ func (e *Engine) attachMedia(p map[string]any, mediaID, mime, msgID string) {
 	if mime == "" {
 		mime = m
 	}
-	url, size, serr := e.deps.Media.Store(context.Background(), e.deps.Session, msgID, mime, data)
-	if serr != nil {
-		p["media"] = map[string]any{"error": serr.Error()}
-		return
+	if e.wantStore() {
+		url, size, serr := e.deps.Media.Store(ctx, e.deps.Session, msgID, mime, data)
+		if serr != nil {
+			p["media"] = map[string]any{"error": serr.Error()}
+		} else if url != "" {
+			p["media"] = map[string]any{"id": msgID, "url": url, "mimetype": mime, "size": size}
+		}
 	}
-	p["media"] = map[string]any{"id": msgID, "url": url, "mimetype": mime, "size": size}
+	if e.deps.Enrich != nil {
+		for k, v := range e.deps.Enrich(ctx, mtype, mime, data) {
+			p[k] = v
+		}
+	}
 }
 
 // emitMessage usa o wamid como ID do evento — assim uma re-entrega da Meta

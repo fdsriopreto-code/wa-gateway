@@ -741,6 +741,9 @@ function cfgModal(s){
   const mStoreChk=h("input",{type:"checkbox",checked:(mc.store!==false)});
   const TTLS=[["","usar padrão do servidor"],["0","nunca apagar"],["5m","5 minutos"],["1h","1 hora"],["6h","6 horas"],["24h","24 horas"],["168h","7 dias"],["720h","30 dias"],["2160h","90 dias"]];
   const mTtlSel=h("select",{},TTLS.map(([v,l])=>h("option",{value:v,selected:(mc.ttl||"")===v||undefined},l)));
+  const enrichCur=mc.enrich===true?"on":mc.enrich===false?"off":"";
+  const mEnrichSel=h("select",{},[["","usar padrão do servidor"],["on","transcrever / descrever"],["off","não enriquecer"]]
+    .map(([v,l])=>h("option",{value:v,selected:enrichCur===v||undefined},l)));
 
   const isCloud=s.engine==="cloud"||!!cfg.cloud;
   const cc=cfg.cloud||{};
@@ -796,6 +799,10 @@ function cfgModal(s){
       h("p",{class:"hint",style:"margin-bottom:10px"},"Vale só quando o servidor tem ",h("code",{},"MEDIA_BACKEND=s3"),". Ajuda a não lotar o bucket."),
       h("label",{class:"check",style:"margin-bottom:12px"},mStoreChk,h("span",{},"guardar imagens / áudios / vídeos recebidos no storage")),
       h("div",{class:"field"},h("label",{},"apagar automaticamente após"),mTtlSel),
+      h("div",{class:"field",style:"margin-top:10px"},
+        h("label",{},"enriquecer mídia recebida (áudio → ",h("code",{},"transcript"),", imagem → ",h("code",{},"imageCaption"),")"),
+        mEnrichSel,
+        h("p",{class:"hint",style:"margin-top:4px"},"Precisa de ",h("code",{},"AI_API_KEY")," no servidor.")),
       h("div",{class:"btn-row",style:"margin-top:14px"},
         h("button",{class:"btn danger ghost sm",onclick:async e=>{
           if(!confirm(`Apagar TODAS as mídias já guardadas da sessão "${s.name}"?`))return;
@@ -847,6 +854,8 @@ function cfgModal(s){
     const md={};
     if(!mStoreChk.checked)md.store=false;
     if(mTtlSel.value)md.ttl=mTtlSel.value;
+    if(mEnrichSel.value==="on")md.enrich=true;
+    else if(mEnrichSel.value==="off")md.enrich=false;
     if(Object.keys(md).length)out.media=md;
     return out;
   }

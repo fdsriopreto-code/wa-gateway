@@ -310,6 +310,8 @@ Tudo por env var. Padrões entre `()`.
 | `MEDIA_BACKEND` (`none` / `s3`) | ingestão de mídia |
 | `MEDIA_TTL` (`0`) | apaga a mídia guardada N depois (0 = pra sempre). Override: `config.media.ttl` |
 | `MEDIA_GC_INTERVAL` (`5m`) | varredura do coletor de mídia vencida |
+| `MEDIA_ENRICH` (`false`) | transcreve áudio (`transcript`) e descreve imagem (`imageCaption`) no payload do evento. Override: `config.media.enrich`. Precisa de `AI_API_KEY` |
+| `AI_BASE_URL` (`https://api.openai.com/v1`) `AI_API_KEY` `AI_TRANSCRIBE_MODEL` (`whisper-1`) `AI_VISION_MODEL` (`gpt-4o-mini`) | API compatível com OpenAI p/ o enriquecimento |
 | `S3_ENDPOINT` `S3_REGION` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_USE_SSL` `S3_PATH_STYLE` `S3_PUBLIC_BASE_URL` | config S3/MinIO |
 | `CORS_ORIGINS` (CSV) | libera origens no browser |
 | `ACCESS_LOG` (`false`) | log de acesso HTTP |
@@ -332,7 +334,7 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
       "headers": { "X-Extra": "1" } }
   ],
   "outbox": { "minIntervalMs": 4000, "jitterMs": 2000, "dailyLimit": 500 },
-  "media": { "store": true, "ttl": "168h" },  // store:false = não guarda; ttl "0" = nunca apaga
+  "media": { "store": true, "ttl": "168h", "enrich": true },  // store:false = não guarda; ttl "0" = nunca apaga; enrich sobrescreve MEDIA_ENRICH
   "cloud": { "phoneNumberId": "…", "accessToken": "…" }, // usa o motor Cloud API
   "rawEvents": false,   // inclui o struct cru do whatsmeow em payload.raw
   "autoRead": false,    // marca recebidas como lidas (recibo azul)

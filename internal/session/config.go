@@ -32,6 +32,10 @@ type MediaConfig struct {
 	// "720h"). Vazio/"0" = usa o padrao global (MEDIA_TTL) ou guarda pra
 	// sempre.
 	TTL string `json:"ttl,omitempty"`
+	// Enrich: transcrever audio / descrever imagem recebidos e por o texto no
+	// payload (transcript / imageCaption). nil = usa o padrao global
+	// (MEDIA_ENRICH); precisa de AI_API_KEY no servidor.
+	Enrich *bool `json:"enrich,omitempty"`
 }
 
 // CloudConfig espelha engine.CloudConfig (o pacote session nao pode importar

@@ -46,6 +46,7 @@ type mediaJob struct {
 	mediaID string
 	mime    string
 	msgID   string
+	mtype   string // image|audio|video|document
 }
 
 const mediaWorkers = 6
@@ -124,7 +125,7 @@ func (e *Engine) mediaWorker() {
 	jobs := e.mediaJobs
 	e.mu.RUnlock()
 	for j := range jobs {
-		e.attachMedia(j.p, j.mediaID, j.mime, j.msgID)
+		e.attachMedia(j.p, j.mediaID, j.mime, j.msgID, j.mtype)
 		e.emitMessage(j.p)
 	}
 }

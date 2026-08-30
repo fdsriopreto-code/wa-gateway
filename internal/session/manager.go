@@ -14,6 +14,7 @@ import (
 
 	"wa-gateway/internal/cache"
 	"wa-gateway/internal/engine"
+	"wa-gateway/internal/enrich"
 	"wa-gateway/internal/events"
 	"wa-gateway/internal/media"
 	"wa-gateway/internal/observability"
@@ -53,6 +54,8 @@ type Manager struct {
 	evStream  *events.Stream // log duravel; nil = só barramento in-process
 	secretBox *secret.Box    // cifra secrets de webhook em repouso; nil-safe
 	mediaTTL  time.Duration  // TTL global de midia (MEDIA_TTL); 0 = guarda pra sempre
+	enricher  *enrich.Client
+	enrichAll bool // MEDIA_ENRICH global; sessao sobrescreve com config.media.enrich
 
 	mu      sync.RWMutex
 	running map[string]*handle
@@ -87,6 +90,41 @@ func (m *Manager) SetSecretBox(b *secret.Box) { m.secretBox = b }
 // SetMediaTTL define o TTL global de mídia (usado quando a sessão não
 // sobrescreve via config.media.ttl).
 func (m *Manager) SetMediaTTL(d time.Duration) { m.mediaTTL = d }
+
+// SetEnricher liga a transcrição de áudio / descrição de imagem. enrichAll é
+// o padrão global (MEDIA_ENRICH); a sessão sobrescreve com config.media.enrich.
+func (m *Manager) SetEnricher(c *enrich.Client, enrichAll bool) {
+	m.enricher, m.enrichAll = c, enrichAll
+}
+
+// enrichMedia é o callback injetado nas engines (engine.Deps.Enrich).
+func (m *Manager) enrichMedia(ctx context.Context, session, mediaType, mime string, data []byte) map[string]any {
+	if m.enricher == nil || !m.enricher.Enabled() {
+		return nil
+	}
+	on := m.enrichAll
+	if mc := m.sessionConfig(session).Media; mc != nil && mc.Enrich != nil {
+		on = *mc.Enrich
+	}
+	if !on {
+		return nil
+	}
+	switch mediaType {
+	case "audio", "ptt", "voice":
+		if t, err := m.enricher.Transcribe(ctx, data, mime); err == nil && t != "" {
+			return map[string]any{"transcript": t}
+		} else if err != nil {
+			m.log.Warn("enrich: transcrição falhou", "session", session, "err", err)
+		}
+	case "image":
+		if d, err := m.enricher.Describe(ctx, data, mime); err == nil && d != "" {
+			return map[string]any{"imageCaption": d}
+		} else if err != nil {
+			m.log.Warn("enrich: descrição de imagem falhou", "session", session, "err", err)
+		}
+	}
+	return nil
+}
 
 // MediaPolicy resolve a política de mídia de uma sessão (opt-out + TTL).
 func (m *Manager) MediaPolicy(name string) media.Policy {
@@ -316,6 +354,13 @@ func (m *Manager) start(ctx context.Context, name string, recovering bool) error
 		return fmt.Errorf("engine desconhecida: %s", engName)
 	}
 
+	var enrichFn func(context.Context, string, string, []byte) map[string]any
+	if m.enricher != nil && m.enricher.Enabled() {
+		enrichFn = func(ctx context.Context, mt, mime string, data []byte) map[string]any {
+			return m.enrichMedia(ctx, name, mt, mime, data)
+		}
+	}
+
 	eng, err := factory(engine.Deps{
 		Session:    name,
 		Cloud:      cloud,
@@ -325,6 +370,7 @@ func (m *Manager) start(ctx context.Context, name string, recovering bool) error
 		Media:      m.media,
 		RawEvents:  func() bool { return m.sessionWantsRaw(name) },
 		Behavior:   func() engine.AutoBehavior { return m.sessionBehavior(name) },
+		Enrich:     enrichFn,
 		StoredJID:  rec.JID,
 		Recovering: recovering,
 	})

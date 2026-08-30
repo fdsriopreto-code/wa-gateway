@@ -21,6 +21,7 @@ import (
 	"wa-gateway/internal/config"
 	_ "wa-gateway/internal/engine/cloud"     // registra o motor Cloud API
 	_ "wa-gateway/internal/engine/whatsmeow" // registra o motor whatsmeow
+	"wa-gateway/internal/enrich"
 	"wa-gateway/internal/events"
 	"wa-gateway/internal/httpapi"
 	"wa-gateway/internal/inbox"
@@ -140,6 +141,11 @@ func run() error {
 	mgr.SetMediaTTL(cfg.MediaTTL)
 	mediaSink.SetPolicy(mgr.MediaPolicy)
 	go mediaSink.RunGC(ctx, cfg.MediaGCInterval)
+	enricher := enrich.New(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AITranscribeModel, cfg.AIVisionModel)
+	mgr.SetEnricher(enricher, cfg.MediaEnrich)
+	if enricher.Enabled() {
+		log.Info("enriquecimento de mídia: on", "base", cfg.AIBaseURL, "padrão", cfg.MediaEnrich)
+	}
 	if mediaStore.Enabled() {
 		log.Info("armazenamento de midia: coletor ativo", "ttl_global", cfg.MediaTTL, "intervalo", cfg.MediaGCInterval)
 	}
