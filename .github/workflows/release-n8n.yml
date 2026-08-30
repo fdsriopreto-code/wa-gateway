@@ -1,0 +1,38 @@
+name: release-n8n
+
+# Publica o node n8n no npm quando você empurra uma tag "n8n-v*".
+#   cd clients/n8n && npm version patch     # cria commit + tag n8n-vX.Y.Z? (ver nota)
+#   git push && git push --tags
+#
+# Nota: `npm version` cria a tag "vX.Y.Z". Para casar com este gatilho, use:
+#   npm version patch --tag-version-prefix="n8n-v"
+# ou empurre a tag manualmente: git tag n8n-v0.1.1 && git push origin n8n-v0.1.1
+
+on:
+  push:
+    tags:
+      - "n8n-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # habilita OIDC / trusted publishing quando configurado no npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - name: build
+        working-directory: clients/n8n
+        run: npm install --no-audit --no-fund && npm run build
+      - name: publish
+        working-directory: clients/n8n
+        run: npm publish --access public
+        env:
+          # 1) via token: crie o secret NPM_TOKEN (granular, write, all packages)
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # 2) via Trusted Publishing: configure o publisher em npmjs.com
+          #    (Package settings > Trusted Publisher) e o npm publica sem token.
