@@ -190,6 +190,14 @@ sequenceDiagram
 - **`outbox.Dispatch`** mapeia `Kind` → método da engine. Kinds: `text`, `image`,
   `file`, `video`, `audio`, `sticker`, `location`, `contact`, `poll`, `forward`,
   `reaction`, `delete`, `edit`.
+- **Auto-resposta** (`internal/autoreply`): consumidor do Redis Stream
+  (consumer group `autoreply`, padrão `message`) que, por `config.autoReply`,
+  responde conversas 1:1 — saudação 1x/contato (`wa:autoreply:greeted:*`,
+  TTL `greetingCooldownH`), regras por palavra-chave, `fallback`, e opção de
+  só agir fora do horário (`hours` com TZ). Anti ping-pong: no máx. 1 resposta
+  por contato / 30s (`wa:autoreply:rl:*`). Envia pela `outbox.Queue` (paced +
+  cluster-safe) quando disponível, senão pela engine local. Grupos, broadcast
+  e `fromMe` ignorados.
 - **Campanhas** (`internal/campaign`): `POST /api/{s}/campaign` grava
   `campaigns` + `campaign_targets` (migração 0008) e o `campaign.Runner`
   enfileira **um job da outbox por alvo** (id `camp:<id>:<n>`) — o pacing, o
@@ -349,7 +357,15 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
   "cloud": { "phoneNumberId": "…", "accessToken": "…" }, // usa o motor Cloud API
   "rawEvents": false,   // inclui o struct cru do whatsmeow em payload.raw
   "autoRead": false,    // marca recebidas como lidas (recibo azul)
-  "autoOnline": false   // mantém presença "available" após conectar
+  "autoOnline": false,  // mantém presença "available" após conectar
+  "autoReply": {        // resposta automática p/ conversas 1:1 (grupos ignorados)
+    "enabled": true,
+    "greeting": "Olá! Já retornamos.",   // 1x por contato (re-envia após greetingCooldownH, default 24)
+    "rules": [ { "contains": ["preço","valor"], "reply": "Tabela: ..." } ],
+    "fallback": "Um atendente responde em breve.",
+    "onlyOutsideHours": true,
+    "hours": { "tz": "America/Sao_Paulo", "start": "09:00", "end": "18:00", "days": [1,2,3,4,5] }
+  }
 }
 ```
 

@@ -17,6 +17,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	"wa-gateway/internal/auth"
+	"wa-gateway/internal/autoreply"
 	"wa-gateway/internal/cache"
 	"wa-gateway/internal/campaign"
 	"wa-gateway/internal/config"
@@ -207,6 +208,7 @@ func run() error {
 	}
 	go mgr.RestoreOwned(ctx)
 	go campaigns.Resume(ctx) // retoma campanhas que ficaram "running"
+	go autoreply.New(mgr, outQueue, rc, log, cfg.NodeID).Run(ctx, evStream)
 
 	// ---- HTTP ----
 	authn := auth.New(cfg.APIKey, func(ctx context.Context, keyID string) (string, []string, error) {

@@ -767,6 +767,20 @@ function cfgModal(s){
   const mEnrichSel=h("select",{},[["","usar padrão do servidor"],["on","transcrever / descrever"],["off","não enriquecer"]]
     .map(([v,l])=>h("option",{value:v,selected:enrichCur===v||undefined},l)));
 
+  // --- auto-resposta ---
+  const ar=cfg.autoReply||{}; const arH=ar.hours||{};
+  const arEnabled=h("input",{type:"checkbox",checked:ar.enabled||undefined});
+  const arGreeting=h("textarea",{rows:2,value:ar.greeting||"",placeholder:"Olá! Recebemos sua mensagem e já retornamos."});
+  const arCooldown=h("input",{type:"number",value:ar.greetingCooldownH||"",placeholder:"24"});
+  const arFallback=h("textarea",{rows:2,value:ar.fallback||"",placeholder:"(opcional) resposta quando nada mais casa"});
+  const arOutside=h("input",{type:"checkbox",checked:ar.onlyOutsideHours||undefined});
+  const arTz=h("input",{value:arH.tz||"",placeholder:"America/Sao_Paulo"});
+  const arStart=h("input",{value:arH.start||"",placeholder:"09:00"});
+  const arEnd=h("input",{value:arH.end||"",placeholder:"18:00"});
+  const arDays=h("input",{value:(arH.days||[]).join(","),placeholder:"1,2,3,4,5 (0=Dom)"});
+  const arRules=h("textarea",{rows:4,value:(ar.rules||[]).map(r=>(r.contains||[]).join(", ")+" => "+(r.reply||"")).join("\n"),
+    placeholder:"preço, valor => Nossa tabela: ...\nhorário, funciona => Atendemos 9h-18h"});
+
   const isCloud=s.engine==="cloud"||!!cfg.cloud;
   const cc=cfg.cloud||{};
   const clPnid=h("input",{value:cc.phoneNumberId||""});
@@ -776,11 +790,12 @@ function cfgModal(s){
   const clSecret=h("input",{value:cc.appSecret||""});
 
   const mediaPane=isCloud?"4":"3";
+  const arPane=isCloud?"5":"4";
   const bodyNode=h("div",{},
     h("div",{class:"tabs",style:"margin-bottom:14px"},
       tabBtn("Webhooks",true),tabBtn("Fila de saída"),tabBtn("Avançado"),
       isCloud?tabBtn("Cloud API"):null,
-      tabBtn("Mídia")),
+      tabBtn("Mídia"),tabBtn("Auto-resposta")),
     // pane webhooks
     h("div",{class:"cfg-pane","data-pane":"0"},
       whList,
@@ -838,6 +853,20 @@ function cfgModal(s){
           try{const r=await apiData("POST",`/api/${encodeURIComponent(s.name)}/media/purge`,{olderThan:d});ok(`${r.deleted} apagada(s) de ${r.matched}`);}
           catch(err){fail(err);}finally{e.target.disabled=false;}
         }},ic("clock","sm"),"…só as antigas"))),
+    // pane auto-resposta
+    h("div",{class:"cfg-pane","data-pane":arPane,hidden:true},
+      h("p",{class:"hint",style:"margin-bottom:10px"},"Responde mensagens 1:1 recebidas (grupos ignorados). Máx. 1 resposta por contato a cada 30s."),
+      h("label",{class:"check",style:"margin-bottom:12px"},arEnabled,h("span",{},"ligar resposta automática nesta sessão")),
+      h("div",{class:"field"},h("label",{},"saudação (1x por contato)"),arGreeting),
+      h("div",{class:"field"},h("label",{},"re-cumprimentar após (horas)"),arCooldown),
+      h("div",{class:"field"},h("label",{},"regras — ",h("code",{},"palavra1, palavra2 => resposta")," (uma por linha)"),arRules),
+      h("div",{class:"field"},h("label",{},"resposta padrão (fallback)"),arFallback),
+      h("label",{class:"check",style:"margin:10px 0"},arOutside,h("span",{},"só responder FORA do horário comercial")),
+      h("div",{class:"frow"},
+        h("div",{class:"field"},h("label",{},"fuso"),arTz),
+        h("div",{class:"field"},h("label",{},"abre"),arStart),
+        h("div",{class:"field"},h("label",{},"fecha"),arEnd)),
+      h("div",{class:"field"},h("label",{},"dias úteis (0=Dom … 6=Sáb)"),arDays)),
     h("div",{class:"btn-row",style:"margin-top:18px"},
       h("button",{class:"btn",onclick:save},ic("check","sm"),"Salvar configuração")),
   );
@@ -879,6 +908,28 @@ function cfgModal(s){
     if(mEnrichSel.value==="on")md.enrich=true;
     else if(mEnrichSel.value==="off")md.enrich=false;
     if(Object.keys(md).length)out.media=md;
+
+    const rules=arRules.value.split("\n").map(ln=>{
+      const i=ln.indexOf("=>"); if(i<0)return null;
+      const contains=ln.slice(0,i).split(",").map(x=>x.trim()).filter(Boolean);
+      const reply=ln.slice(i+2).trim();
+      return (contains.length&&reply)?{contains,reply}:null;
+    }).filter(Boolean);
+    const arv={};
+    if(arEnabled.checked)arv.enabled=true;
+    if(arGreeting.value.trim())arv.greeting=arGreeting.value.trim();
+    if(+arCooldown.value>0)arv.greetingCooldownH=+arCooldown.value;
+    if(rules.length)arv.rules=rules;
+    if(arFallback.value.trim())arv.fallback=arFallback.value.trim();
+    if(arOutside.checked)arv.onlyOutsideHours=true;
+    const hrs={};
+    if(arTz.value.trim())hrs.tz=arTz.value.trim();
+    if(arStart.value.trim())hrs.start=arStart.value.trim();
+    if(arEnd.value.trim())hrs.end=arEnd.value.trim();
+    const days=arDays.value.split(",").map(x=>parseInt(x.trim(),10)).filter(n=>n>=0&&n<=6);
+    if(days.length)hrs.days=days;
+    if(Object.keys(hrs).length)arv.hours=hrs;
+    if(Object.keys(arv).length)out.autoReply=arv;
     return out;
   }
   function syncPreview(){const p=$("#cfg-preview");if(p)p.textContent=JSON.stringify(collect(),null,2);}

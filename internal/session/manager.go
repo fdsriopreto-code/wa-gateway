@@ -237,6 +237,12 @@ func (m *Manager) sessionConfig(name string) Config {
 
 func (m *Manager) sessionWantsRaw(name string) bool { return m.sessionConfig(name).RawEvents }
 
+// AutoReplyConfig devolve a config de resposta automática da sessão (nil se
+// não configurada). Usa o cache curto de config.
+func (m *Manager) AutoReplyConfig(name string) *AutoReplyConfig {
+	return m.sessionConfig(name).AutoReply
+}
+
 func (m *Manager) sessionBehavior(name string) engine.AutoBehavior {
 	c := m.sessionConfig(name)
 	return engine.AutoBehavior{AutoRead: c.AutoRead, AutoOnline: c.AutoOnline}

@@ -31,8 +31,11 @@ type campaignReq struct {
 }
 
 const (
-	maxRecipients   = 50000
-	maxCampaignBlob = 5 << 20 // 5 MiB: a mídia de campanha é replicada por alvo na fila
+	maxRecipients = 50000
+	// A mídia de campanha é replicada no payload de cada job na fila. Para não
+	// estourar o Redis, campanha de mídia tem limites bem menores que texto.
+	maxCampaignBlob    = 2 << 20 // 2 MiB por mídia
+	maxMediaRecipients = 2000    // teto de alvos numa campanha de mídia
 )
 
 var campaignKinds = map[string]bool{
@@ -127,7 +130,11 @@ func (d Deps) createCampaign(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(data) > maxCampaignBlob {
-			writeErr(w, http.StatusRequestEntityTooLarge, "too_large", "mídia de campanha limitada a 5 MiB")
+			writeErr(w, http.StatusRequestEntityTooLarge, "too_large", "mídia de campanha limitada a 2 MiB")
+			return
+		}
+		if len(recips) > maxMediaRecipients {
+			writeErr(w, http.StatusBadRequest, "bad_request", "campanha de mídia limitada a "+strconv.Itoa(maxMediaRecipients)+" destinatários (a mídia é replicada por alvo na fila)")
 			return
 		}
 		mime := req.Mimetype

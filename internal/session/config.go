@@ -20,6 +20,38 @@ type Config struct {
 	Cloud *CloudConfig `json:"cloud,omitempty"`
 	// Media: politica de armazenamento de midia recebida desta sessao.
 	Media *MediaConfig `json:"media,omitempty"`
+	// AutoReply: resposta automatica (fora de horario, saudacao, palavras-chave).
+	AutoReply *AutoReplyConfig `json:"autoReply,omitempty"`
+}
+
+// AutoReplyConfig liga a resposta automatica para mensagens recebidas em
+// conversas 1:1 (grupos ignorados). O consumidor le do log de eventos, entao
+// funciona nos dois motores.
+type AutoReplyConfig struct {
+	Enabled bool `json:"enabled"`
+	// OnlyOutsideHours: so responde quando esta FORA do horario comercial
+	// definido em Hours. Sem Hours, isso nao tem efeito (responde sempre).
+	OnlyOutsideHours bool         `json:"onlyOutsideHours,omitempty"`
+	Hours            *OfficeHours `json:"hours,omitempty"`
+	// Greeting: mandada uma vez por contato (re-manda depois de GreetingCooldownH).
+	Greeting          string `json:"greeting,omitempty"`
+	GreetingCooldownH int    `json:"greetingCooldownH,omitempty"` // default 24
+	// Rules: primeira regra cujo "contains" casa (case-insensitive) responde.
+	Rules []AutoReplyRule `json:"rules,omitempty"`
+	// Fallback: resposta quando nada mais casou (opcional).
+	Fallback string `json:"fallback,omitempty"`
+}
+
+type OfficeHours struct {
+	TZ    string `json:"tz,omitempty"`    // ex.: "America/Sao_Paulo"; vazio = UTC
+	Start string `json:"start,omitempty"` // "HH:MM"
+	End   string `json:"end,omitempty"`   // "HH:MM"
+	Days  []int  `json:"days,omitempty"`  // 0=Dom .. 6=Sab; vazio = seg-sex
+}
+
+type AutoReplyRule struct {
+	Contains []string `json:"contains"`
+	Reply    string   `json:"reply"`
 }
 
 // MediaConfig controla o que fazer com a midia recebida (quando MEDIA_BACKEND

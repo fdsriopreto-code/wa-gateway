@@ -122,6 +122,14 @@ Atualizado em **2026-08-30**.
   Follow-ups: (a) sem templating por destinatário (`{{nome}}`); (b) falha
   transitória marca o alvo `failed` antes do retry (cosmético até resolver);
   (c) sem MCP tool ainda.
+- **Auto-resposta por sessão** (`internal/autoreply`) — `config.autoReply`:
+  saudação 1x/contato (cooldown), regras `contains → reply`, `fallback`, e
+  `onlyOutsideHours` + `hours` (TZ, janela, dias — janela pode cruzar a
+  meia-noite). Consome o Redis Stream (consumer group), então serve os dois
+  motores e sobrevive a restart. Anti ping-pong: 1 resposta/contato/30s.
+  Envia pela fila de saída (paced). Console: aba **Auto-resposta** no
+  cfgModal. Testes de horário/parse. Follow-ups: sem IA (é regra fixa —
+  quem quer LLM usa o node n8n "wa-gateway Agente"); sem métrica dedicada.
 - CI completo + release automático do node n8n por tag.
 
 ---
