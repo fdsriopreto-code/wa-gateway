@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -65,6 +66,14 @@ type queueOpts struct {
 	Delay   string `json:"delay,omitempty"` // ex.: "30s", "5m"
 }
 
+// cbOpts e embutido nos envios diretos (nao enfileirados): quando callbackUrl
+// esta setado, o gateway faz um POST nela ao confirmar entrega/leitura/falha
+// da mensagem (StatusCallback por mensagem). callbackData volta no corpo.
+type cbOpts struct {
+	CallbackURL  string          `json:"callbackUrl,omitempty"`
+	CallbackData json.RawMessage `json:"callbackData,omitempty"`
+}
+
 // msgExtra e embutido nos envios que aceitam citacao / mencoes / link preview.
 type msgExtra struct {
 	QuotedID          string   `json:"quotedId,omitempty"`
@@ -84,6 +93,7 @@ func (m msgExtra) opts() engine.MessageOpts {
 type sendTextReq struct {
 	queueOpts
 	msgExtra
+	cbOpts
 	Session string `json:"session"`
 	ChatID  string `json:"chatId"`
 	Text    string `json:"text"`
@@ -109,7 +119,18 @@ func (d Deps) sendText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := eng.SendText(r.Context(), req.ChatID, req.Text, req.opts())
+	if err == nil {
+		d.armCB(r.Context(), req.Session, res, req.cbOpts)
+	}
 	sendResp(w, res, err)
+}
+
+// armCB registra o StatusCallback por mensagem, se pedido.
+func (d Deps) armCB(ctx context.Context, session string, res engine.SendResult, o cbOpts) {
+	if d.AckCB == nil || o.CallbackURL == "" || res.MessageID == "" {
+		return
+	}
+	d.AckCB.Arm(ctx, session, res.MessageID, o.CallbackURL, o.CallbackData, 0)
 }
 
 // mediaReq cobre imagem/arquivo/video/audio: os campos extras sao ignorados
@@ -117,6 +138,7 @@ func (d Deps) sendText(w http.ResponseWriter, r *http.Request) {
 type mediaReq struct {
 	queueOpts
 	msgExtra
+	cbOpts
 	Session  string `json:"session"`
 	ChatID   string `json:"chatId"`
 	Caption  string `json:"caption"`
@@ -240,6 +262,9 @@ func (d Deps) sendMedia(w http.ResponseWriter, r *http.Request, kind outbox.Kind
 		return
 	}
 	res, err := call(eng, req.ChatID, m)
+	if err == nil {
+		d.armCB(r.Context(), req.Session, res, req.cbOpts)
+	}
 	sendResp(w, res, err)
 }
 

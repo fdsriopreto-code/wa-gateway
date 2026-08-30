@@ -20,7 +20,9 @@ Todos exigem `X-Api-Key` (a chave pode ter escopo `session:<nome>`).
   "brand": "ACME",           // opcional — aparece na mensagem
   "template": "...",         // opcional — sobrescreve o texto (ver placeholders)
   "codeLength": 6,           // opcional — 4..10, default 6
-  "ttlSeconds": 300          // opcional — 30..1800, default 300
+  "ttlSeconds": 300,         // opcional — 30..1800, default 300
+  "callbackUrl": "https://meuapp/otp-status",  // opcional — ver "Confirmação de entrega"
+  "callbackData": { "userId": 123 }            // opcional — ecoado no callback
 }
 ```
 
@@ -90,6 +92,46 @@ Invalida o código ativo e o cooldown (ex.: o usuário trocou de número).
 
 **Placeholders do template:** `{{code}}`, `{{brand}}` (com espaço à esquerda
 quando setado), `{{minutes}}`, `{{ttl}}`.
+
+## Confirmação de entrega (StatusCallback por mensagem)
+
+Passe `callbackUrl` em `otp/send` (ou em qualquer `POST /api/sendText` /
+`sendImage` / … — o campo é o mesmo) e o gateway faz **um POST** nessa URL
+assim que o WhatsApp confirmar a mensagem — sem você precisar assinar o
+webhook `message.ack` inteiro e correlacionar.
+
+```jsonc
+// POST na sua callbackUrl (uma vez, no 1º status terminal):
+{
+  "messageId": "3EB0…",
+  "session":   "games",
+  "to":        "5517999999999@s.whatsapp.net",
+  "status":    "delivered",   // delivered | read | played | failed
+  "timestamp": 1730000000,
+  "data":      { "userId": 123 }   // o que você mandou em callbackData
+}
+```
+
+- Dispara no **primeiro** status terminal (`delivered`/`read`/`failed`) e
+  desarma — 1 callback por mensagem.
+- 3 tentativas (backoff 2s/4s/6s, timeout 10s). Se tudo falhar, loga e desiste
+  — o webhook normal `message.ack` continua valendo como plano B.
+- Válido por 15 min após o envio (ack que chega depois disso é ignorado).
+- `callbackUrl` **não** vale para envios enfileirados (`enqueue: true`).
+- Deixe a URL difícil de adivinhar (token no path/query) — o POST não é
+  assinado.
+
+**Fluxo típico do SaaS** (app gera e guarda o código, o gateway só é o cano):
+
+```
+[app] gera código, salva no banco
+[app] POST /api/{s}/otp/send  { to, template:"Seu código é {{code}}", callbackUrl, callbackData:{id} }
+        (ou POST /api/sendText direto com o texto já montado)
+[gateway] manda no WhatsApp  → 200 { id, ... }
+[gateway] quando entregar → POST callbackUrl { messageId, status:"delivered", data:{id} }
+[app] marca no banco "enviado/entregue"
+[usuário] digita o código → [app] confere no próprio banco
+```
 
 ## Segurança
 

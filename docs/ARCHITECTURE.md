@@ -190,6 +190,11 @@ sequenceDiagram
 - **`outbox.Dispatch`** mapeia `Kind` → método da engine. Kinds: `text`, `image`,
   `file`, `video`, `audio`, `sticker`, `location`, `contact`, `poll`, `forward`,
   `reaction`, `delete`, `edit`.
+- **StatusCallback por mensagem** (`internal/ackcb`): `callbackUrl` nos envios
+  diretos (`sendText`/`send*`/`otp/send`) → `Arm` grava `wa:ackcb:<s>:<msgId>`
+  (TTL 15m); um consumer do stream `message.ack` (grupo `ackcb`) faz **1 POST**
+  na URL no 1º status terminal e desarma (claim por `DEL` = 1). É o "Twilio
+  StatusCallback": saber de UMA mensagem sem processar toda a torrente de acks.
 - **OTP** (`internal/otp`, [OTP.md](OTP.md)): `POST /api/{s}/otp/{send,verify,cancel}`.
   `send` gera código numérico e grava só o `HMAC-SHA256(SECRET_KEY,
   sessão|número|código)` num hash Redis (`wa:otp:<s>:<num>`) com TTL; envia

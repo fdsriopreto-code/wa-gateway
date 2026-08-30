@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -14,11 +15,13 @@ import (
 )
 
 type otpSendReq struct {
-	To         string `json:"to"`
-	Template   string `json:"template"`
-	Brand      string `json:"brand"`
-	CodeLength int    `json:"codeLength"`
-	TTLSeconds int    `json:"ttlSeconds"`
+	To           string          `json:"to"`
+	Template     string          `json:"template"`
+	Brand        string          `json:"brand"`
+	CodeLength   int             `json:"codeLength"`
+	TTLSeconds   int             `json:"ttlSeconds"`
+	CallbackURL  string          `json:"callbackUrl"`  // POST quando a msg for entregue/lida/falhar
+	CallbackData json.RawMessage `json:"callbackData"` // ecoado no callback
 }
 
 // otpSend gera um código, guarda o hash no Redis e manda pela sessão.
@@ -71,12 +74,16 @@ func (d Deps) otpSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, serr := eng.SendText(r.Context(), ch.To+"@s.whatsapp.net", ch.Message, engine.MessageOpts{}); serr != nil {
+	res, serr := eng.SendText(r.Context(), ch.To+"@s.whatsapp.net", ch.Message, engine.MessageOpts{})
+	if serr != nil {
 		_ = d.OTP.Cancel(r.Context(), session, ch.To) // não deixa código órfão
 		writeErr(w, http.StatusBadGateway, "send_failed", "não consegui enviar a mensagem: "+serr.Error())
 		return
 	}
 	observability.OTPSent.WithLabelValues(session).Inc()
+	if req.CallbackURL != "" {
+		d.armCB(r.Context(), session, res, cbOpts{CallbackURL: req.CallbackURL, CallbackData: req.CallbackData})
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":                 ch.ID,

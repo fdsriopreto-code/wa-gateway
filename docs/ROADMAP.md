@@ -143,6 +143,14 @@ Atualizado em **2026-08-30**.
   aprovado (`config.otp.templateName`), não texto puro — a Meta pode barrar OTP
   em texto em escala; (b) `send`/`verify` precisam usar o mesmo formato de
   número (ou o fluxo por `id`).
+- **StatusCallback por mensagem** (`internal/ackcb`) — `callbackUrl` +
+  `callbackData` em `otp/send` e nos `POST /api/send*` diretos: o gateway
+  guarda `wa:ackcb:<s>:<msgId>` (TTL 15m) e um consumer do stream `message.ack`
+  faz **1 POST** na URL no 1º status terminal (`delivered`/`read`/`failed`),
+  com `{messageId, session, to, status, timestamp, data}`. 3 tentativas.
+  Pra SaaS que gera/guarda/confere o código no próprio banco e só quer o
+  gateway como cano + confirmação de entrega. Não vale pra `enqueue:true`.
+  Testes com miniredis + httptest.
 - CI completo + release automático do node n8n por tag.
 
 ---

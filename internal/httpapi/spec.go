@@ -41,7 +41,7 @@ var specEndpoints = []ep{
 	{"POST", "/api/{session}/block", "Profile", "Bloquear / desbloquear", map[string]any{"jid": "5517…@s.whatsapp.net", "block": true}, nil},
 
 	// ---- envio
-	{"POST", "/api/sendText", "Messaging", "Enviar texto", map[string]any{"session": "default", "chatId": "5517999999999@s.whatsapp.net", "text": "olá", "quotedId": "", "mentions": []string{}, "linkPreview": false, "enqueue": false}, nil},
+	{"POST", "/api/sendText", "Messaging", "Enviar texto. callbackUrl (opcional): POST quando a msg for entregue/lida/falhar.", map[string]any{"session": "default", "chatId": "5517999999999@s.whatsapp.net", "text": "olá", "linkPreview": false, "enqueue": false, "callbackUrl": "", "callbackData": map[string]any{}}, nil},
 	{"POST", "/api/sendImage", "Messaging", "Enviar imagem", map[string]any{"session": "default", "chatId": "…@s.whatsapp.net", "data": "<base64>", "caption": "", "mimetype": ""}, nil},
 	{"POST", "/api/sendFile", "Messaging", "Enviar documento", map[string]any{"session": "default", "chatId": "…", "data": "<base64>", "filename": "doc.pdf", "mimetype": ""}, nil},
 	{"POST", "/api/sendVideo", "Messaging", "Enviar vídeo", map[string]any{"session": "default", "chatId": "…", "data": "<base64>", "caption": ""}, nil},
@@ -101,7 +101,7 @@ var specEndpoints = []ep{
 	{"GET", "/api/stats", "Monitor", "Estatísticas", nil, nil},
 
 	// ---- OTP (código de verificação)
-	{"POST", "/api/{session}/otp/send", "OTP", "Gera e envia um código de verificação por WhatsApp", map[string]any{"to": "5517999999999", "brand": "ACME", "codeLength": 6, "ttlSeconds": 300}, nil},
+	{"POST", "/api/{session}/otp/send", "OTP", "Gera e envia um código de verificação por WhatsApp. callbackUrl (opcional) recebe um POST quando a msg for entregue.", map[string]any{"to": "5517999999999", "brand": "ACME", "codeLength": 6, "ttlSeconds": 300, "callbackUrl": "https://meuapp/otp-status", "callbackData": map[string]any{"userId": 123}}, nil},
 	{"POST", "/api/{session}/otp/verify", "OTP", "Confere o código (por to ou por id)", map[string]any{"to": "5517999999999", "code": "123456"}, nil},
 	{"POST", "/api/{session}/otp/cancel", "OTP", "Invalida o código ativo de um número", map[string]any{"to": "5517999999999"}, nil},
 

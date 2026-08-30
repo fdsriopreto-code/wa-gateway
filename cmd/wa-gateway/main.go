@@ -16,6 +16,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"wa-gateway/internal/ackcb"
 	"wa-gateway/internal/auth"
 	"wa-gateway/internal/autoreply"
 	"wa-gateway/internal/cache"
@@ -207,9 +208,12 @@ func run() error {
 		go inbox.New(st, log, cfg.NodeID).Run(ctx, evStream)
 		log.Info("persistencia de mensagens: on")
 	}
+	ackCB := ackcb.New(rc, log, cfg.NodeID)
+
 	go mgr.RestoreOwned(ctx)
 	go campaigns.Resume(ctx) // retoma campanhas que ficaram "running"
 	go autoreply.New(mgr, outQueue, rc, log, cfg.NodeID).Run(ctx, evStream)
+	go ackCB.Run(ctx, evStream) // StatusCallback por mensagem (callbackUrl)
 
 	// ---- HTTP ----
 	authn := auth.New(cfg.APIKey, func(ctx context.Context, keyID string) (string, []string, error) {
@@ -234,6 +238,7 @@ func run() error {
 		Queue:       outQueue,
 		Campaigns:   campaigns,
 		OTP:         otp.New(rc, cfg.SecretKey),
+		AckCB:       ackCB,
 		Dispatcher:  dispatcher,
 		Media:       mediaStore,
 		Cache:       rc,
