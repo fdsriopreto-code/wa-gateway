@@ -24,8 +24,14 @@ import (
 	"wa-gateway/internal/events"
 )
 
+// engineName e o identificador publico da engine (aparece em sessions.engine
+// e no campo "engine" dos eventos). O pacote continua chamado "whatsmeow"
+// internamente, mas nao expomos o nome da lib pra fora.
+const engineName = "wa-gateway"
+
 func init() {
-	engine.Register("whatsmeow", New)
+	engine.Register(engineName, New)
+	engine.Register("whatsmeow", New) // alias: registros antigos no banco
 }
 
 type Engine struct {
@@ -54,7 +60,7 @@ func New(deps engine.Deps) (engine.Engine, error) {
 	return &Engine{deps: deps, status: engine.StatusStopped}, nil
 }
 
-func (e *Engine) Name() string { return "whatsmeow" }
+func (e *Engine) Name() string { return engineName }
 
 func (e *Engine) Status() engine.Status {
 	e.mu.RLock()
@@ -353,7 +359,7 @@ func (e *Engine) emit(name string, payload any) {
 		Session:   e.deps.Session,
 		Name:      name,
 		Timestamp: time.Now().UTC(),
-		Engine:    "whatsmeow",
+		Engine:    engineName,
 		Payload:   payload,
 	})
 }

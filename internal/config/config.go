@@ -66,7 +66,7 @@ func Load() (Config, error) {
 		DatabaseMaxConn:    envInt("DATABASE_MAX_CONNS", 0),
 		RedisURL:           env("REDIS_URL", "redis://localhost:6379/0"),
 		APIKey:             env("API_KEY", ""),
-		DefaultEngine:      env("DEFAULT_ENGINE", "whatsmeow"),
+		DefaultEngine:      env("DEFAULT_ENGINE", "wa-gateway"),
 		WebhookTimeout:     envDuration("WEBHOOK_TIMEOUT", 15*time.Second),
 		WebhookMaxAttempts: envInt("WEBHOOK_MAX_ATTEMPTS", 15),
 		OutboxMinInterval:  envDuration("OUTBOX_MIN_INTERVAL", 3*time.Second),

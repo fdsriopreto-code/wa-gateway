@@ -35,7 +35,7 @@ func TestNewEnvelope(t *testing.T) {
 		ID:        "abc",
 		Session:   "s1",
 		Name:      "message",
-		Engine:    "whatsmeow",
+		Engine:    "wa-gateway",
 		Timestamp: time.Unix(1700000000, 0).UTC(),
 		Payload:   map[string]any{"body": "oi"},
 	}
