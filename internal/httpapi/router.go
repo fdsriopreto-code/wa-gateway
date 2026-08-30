@@ -34,6 +34,16 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 	// autenticado
 	r.Group(func(r chi.Router) {
 		r.Use(authn.Middleware)
+		if d.Cache != nil && d.RateRPS > 0 {
+			burst := d.RateBurst
+			if burst <= 0 {
+				burst = d.RateRPS * 2
+			}
+			if burst < 10 {
+				burst = 10
+			}
+			r.Use(rateLimitMW(d.Cache, d.RateRPS, burst))
+		}
 		if d.Cache != nil {
 			r.Use(idempotencyMW(d.Cache))
 		}

@@ -34,6 +34,8 @@ type Deps struct {
 	StartedAt   string
 	CORSOrigins []string
 	AccessLog   bool
+	RateRPS     float64 // rate limit por chave de API; <=0 desliga
+	RateBurst   float64 // pico permitido; default 2x RPS (mín 10)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -41,4 +41,9 @@ var (
 		Name: "wa_ws_clients",
 		Help: "Clientes WebSocket conectados neste no.",
 	})
+
+	RateLimited = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "wa_rate_limited_total",
+		Help: "Requisicoes rejeitadas por rate limit, por chave de API.",
+	}, []string{"key"})
 )

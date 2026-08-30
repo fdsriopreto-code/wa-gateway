@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,6 +68,39 @@ func (c *captureWriter) Write(b []byte) (int, error) {
 	}
 	c.buf.Write(b)
 	return c.ResponseWriter.Write(b)
+}
+
+// rateLimitMW aplica um token bucket por chave de API (Principal.KeyID) via
+// Redis. rps<=0 desliga. A chave-mestra ("master") fica isenta. Fail-open:
+// se o Redis nao responder, deixa passar.
+func rateLimitMW(rc *cache.Redis, rps, burst float64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if rc == nil || rps <= 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
+			p, ok := auth.FromContext(r.Context())
+			if !ok || p.KeyID == "" || p.KeyID == "master" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			allowed, remaining, retry, _ := rc.RateAllow(r.Context(), p.KeyID, rps, burst)
+			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(int(burst)))
+			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+			if !allowed {
+				secs := int(retry/time.Second) + 1
+				w.Header().Set("Retry-After", strconv.Itoa(secs))
+				observability.RateLimited.WithLabelValues(p.KeyID).Inc()
+				writeJSON(w, http.StatusTooManyRequests, map[string]any{
+					"error": "rate_limited", "message": "limite de requisicoes excedido para esta chave",
+					"retryAfterMs": retry.Milliseconds(),
+				})
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // corsMW responde preflight e ecoa a origem quando ela esta na lista (ou "*").

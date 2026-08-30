@@ -52,6 +52,10 @@ Atualizado em **2026-08-30**.
   ação, Trigger roteador (7 saídas por tipo, baixa mídia), Fila (debounce),
   Pausa do bot.
 - Fila de saída com *pacing* anti-ban (slot por sessão, jitter, teto diário).
+- **Rate limit por chave de API** — token bucket no Redis, `429` + `Retry-After`
+  + `X-RateLimit-*`; `RATE_LIMIT_RPS` (default 20), chave-mestra isenta.
+- **WS multi-nó com heartbeat** — só propaga eventos via Redis pub/sub quando
+  há >1 nó vivo (`wa:ws:nodes`); com 1 réplica, tráfego pub/sub = zero.
 - CI completo + release automático do node n8n por tag.
 
 ---
@@ -60,10 +64,8 @@ Atualizado em **2026-08-30**.
 
 | Item | Por quê | Esboço |
 |---|---|---|
-| **Rate-limit por API key** | proteger o serviço de cliente abusivo / loop de n8n | token bucket no Redis por `KeyID`; header `Retry-After`; config `RATE_LIMIT_RPS` |
 | **Roteamento de request entre nós** | hoje `POST` numa sessão de outro nó → 409 | o nó que recebe consulta o lock (`wa:lock:<s>` guarda o `nodeID`) e faz *reverse-proxy* pro dono; ou expõe o mapa sessão→nó pro LB |
-| **WS: só publicar no Redis se houver >1 nó** | corta tráfego Redis à toa no caso comum | `Hub` checa um `SCARD wa:nodes` (heartbeat de nós) antes de `PUBLISH` |
-| **Reenvio manual de webhook** | `POST /api/deliveries/{id}/retry` | reenfileira o `deliverPayload` guardado |
+| **Reenvio manual de webhook** | `POST /api/deliveries/{id}/retry` | precisa guardar o `deliverPayload` (body+secret) numa coluna `jsonb` — migração |
 | **Métricas de negócio** | msgs enviadas/recebidas por sessão, lag da fila | contadores Prometheus com label `session` |
 | **Labels do WhatsApp Business** | eventos `label.*` já chegam, falta expor | `GET /api/{s}/labels`, associar/desassociar em chat/mensagem |
 | **Plugins de saída (NATS / AMQP)** | quem não quer webhook HTTP | interface `Sink` no dispatcher, além do HTTP |

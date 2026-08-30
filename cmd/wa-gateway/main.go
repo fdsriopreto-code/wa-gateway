@@ -182,6 +182,8 @@ func run() error {
 		StartedAt:   time.Now().UTC().Format(time.RFC3339),
 		CORSOrigins: cfg.CORSOrigins,
 		AccessLog:   cfg.AccessLog,
+		RateRPS:     float64(cfg.RateLimitRPS),
+		RateBurst:   float64(cfg.RateLimitBurst),
 	}, authn)
 
 	srv := &http.Server{

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -23,7 +24,10 @@ import (
 	"wa-gateway/internal/observability"
 )
 
-const redisChannel = "wa:ws"
+const (
+	redisChannel = "wa:ws"
+	nodesKey     = "wa:ws:nodes"
+)
 
 type client struct {
 	session string
@@ -32,11 +36,12 @@ type client struct {
 }
 
 type Hub struct {
-	log    *slog.Logger
-	redis  *cache.Redis
-	nodeID string
-	mu     sync.RWMutex
-	set    map[*client]struct{}
+	log      *slog.Logger
+	redis    *cache.Redis
+	nodeID   string
+	mu       sync.RWMutex
+	set      map[*client]struct{}
+	hasPeers atomic.Bool // true quando há >1 nó vivo (aí vale publicar no Redis)
 }
 
 func NewHub(log *slog.Logger, redis *cache.Redis, nodeID string) *Hub {
@@ -48,6 +53,7 @@ func NewHub(log *slog.Logger, redis *cache.Redis, nodeID string) *Hub {
 func (h *Hub) Run(ctx context.Context, bus *events.Bus) {
 	if h.redis != nil {
 		go h.consumeRedis(ctx)
+		go h.heartbeat(ctx)
 	}
 	ch, cancel := bus.Subscribe("ws", "*", 8192)
 	defer cancel()
@@ -77,10 +83,33 @@ func (h *Hub) onLocal(e events.Event) {
 		return
 	}
 	h.deliver(e.Session, e.Name, msg)
-	if h.redis != nil {
+	// só propaga entre nós se houver outro nó vivo — num deploy de 1 réplica
+	// (o caso comum) isso zera o tráfego pub/sub à toa.
+	if h.redis != nil && h.hasPeers.Load() {
 		framed := append([]byte(h.nodeID), '\x00')
 		framed = append(framed, msg...)
 		_ = h.redis.Publish(context.Background(), redisChannel, framed)
+	}
+}
+
+// heartbeat marca este nó como vivo e atualiza hasPeers (a cada 8s).
+func (h *Hub) heartbeat(ctx context.Context) {
+	t := time.NewTicker(8 * time.Second)
+	defer t.Stop()
+	tick := func() {
+		n, err := h.redis.Heartbeat(ctx, nodesKey, h.nodeID, 25*time.Second)
+		if err == nil {
+			h.hasPeers.Store(n > 1)
+		}
+	}
+	tick()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			tick()
+		}
 	}
 }
 

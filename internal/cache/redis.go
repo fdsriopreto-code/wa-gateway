@@ -5,6 +5,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -59,6 +60,49 @@ func (r *Redis) ReleaseLock(ctx context.Context, key, val string) error {
 	return releaseScript.Run(ctx, r.c, []string{key}, val).Err()
 }
 
+// ---- rate limit (token bucket) ----
+
+// rateScript e um token bucket: recarrega `rate` tokens/s ate `burst`, gasta
+// `want` por chamada. Devolve {permitido(0/1), tokens_restantes, retry_ms}.
+var rateScript = redis.NewScript(`
+local rate  = tonumber(ARGV[1])
+local burst = tonumber(ARGV[2])
+local now   = tonumber(ARGV[3])
+local want  = tonumber(ARGV[4])
+local d = redis.call('HMGET', KEYS[1], 'tk', 'ts')
+local tokens = tonumber(d[1])
+local ts = tonumber(d[2])
+if tokens == nil then tokens = burst; ts = now end
+local delta = now - ts
+if delta < 0 then delta = 0 end
+tokens = math.min(burst, tokens + (delta / 1000.0) * rate)
+local allowed = 0
+local retry = 0
+if tokens >= want then
+  allowed = 1
+  tokens = tokens - want
+else
+  retry = math.ceil((want - tokens) / rate * 1000)
+end
+redis.call('HSET', KEYS[1], 'tk', tokens, 'ts', now)
+redis.call('PEXPIRE', KEYS[1], math.ceil(burst / rate * 1000) + 1000)
+return {allowed, math.floor(tokens), retry}
+`)
+
+// RateAllow consome 1 token do bucket `key`. allowed=false quando estourou;
+// retryAfter diz em quanto tempo haveria token de novo.
+func (r *Redis) RateAllow(ctx context.Context, key string, rate, burst float64) (allowed bool, remaining int, retryAfter time.Duration, err error) {
+	now := time.Now().UnixMilli()
+	res, e := rateScript.Run(ctx, r.c, []string{"rl:" + key}, rate, burst, now, 1).Int64Slice()
+	if e != nil {
+		return true, 0, 0, e // fail-open: Redis fora do ar nao trava a API
+	}
+	if len(res) < 3 {
+		return true, 0, 0, nil
+	}
+	return res[0] == 1, int(res[1]), time.Duration(res[2]) * time.Millisecond, nil
+}
+
 // ---- cache com TTL ----
 
 func (r *Redis) SetJSON(ctx context.Context, key string, v any, ttl time.Duration) error {
@@ -78,6 +122,25 @@ func (r *Redis) GetJSON(ctx context.Context, key string, dst any) (bool, error) 
 		return false, err
 	}
 	return true, json.Unmarshal(b, dst)
+}
+
+// ---- presenca de nos ----
+
+// Heartbeat marca este no como vivo no sorted set `key` e devolve quantos
+// nos foram vistos nos ultimos `ttl`. Usado pra so propagar eventos via
+// pub/sub quando ha mais de um no.
+func (r *Redis) Heartbeat(ctx context.Context, key, node string, ttl time.Duration) (int, error) {
+	now := time.Now().UnixMilli()
+	cutoff := strconv.FormatInt(now-ttl.Milliseconds(), 10)
+	pipe := r.c.Pipeline()
+	pipe.ZAdd(ctx, key, redis.Z{Score: float64(now), Member: node})
+	pipe.ZRemRangeByScore(ctx, key, "-inf", "("+cutoff)
+	card := pipe.ZCard(ctx, key)
+	pipe.Expire(ctx, key, ttl*4)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return 1, err
+	}
+	return int(card.Val()), nil
 }
 
 // ---- pub/sub ----

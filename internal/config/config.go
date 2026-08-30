@@ -53,6 +53,11 @@ type Config struct {
 	// AccessLog: loga uma linha por request (method, path, status, dur).
 	AccessLog bool
 
+	// Rate limit por chave de API (token bucket no Redis). RPS<=0 desliga.
+	// A chave-mestra (API_KEY) fica isenta. Burst 0 = 2x RPS (mín 10).
+	RateLimitRPS   int
+	RateLimitBurst int
+
 	LogLevel  string
 	LogFormat string
 	NodeID    string
@@ -84,6 +89,8 @@ func Load() (Config, error) {
 		S3PublicBaseURL:    env("S3_PUBLIC_BASE_URL", ""),
 		CORSOrigins:        splitCSV(env("CORS_ORIGINS", "")),
 		AccessLog:          envBool("ACCESS_LOG", false),
+		RateLimitRPS:       envInt("RATE_LIMIT_RPS", 20),
+		RateLimitBurst:     envInt("RATE_LIMIT_BURST", 0),
 		LogLevel:           env("LOG_LEVEL", "info"),
 		LogFormat:          env("LOG_FORMAT", "text"),
 		NodeID:             env("NODE_ID", ""),
