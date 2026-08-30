@@ -127,6 +127,14 @@ func (m *Manager) Engine(name string) (engine.Engine, bool) {
 // Start adquire o lock de posse e inicia a engine. ctx e usado apenas para
 // as chamadas de setup; o ciclo de vida da engine e independente.
 func (m *Manager) Start(ctx context.Context, name string) error {
+	return m.start(ctx, name, false)
+}
+
+// start com recovering=true e usado so pelo RestoreOwned (boot): permite a
+// engine adotar um device orfao do store quando a sessao ja estava ativa mas
+// perdeu o vinculo do JID. Numa partida interativa (recovering=false) isso
+// nao acontece, pra uma sessao nova nao roubar o device de outra.
+func (m *Manager) start(ctx context.Context, name string, recovering bool) error {
 	m.mu.Lock()
 	if _, ok := m.running[name]; ok {
 		m.mu.Unlock()
@@ -172,14 +180,15 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	}
 
 	eng, err := factory(engine.Deps{
-		Session:   name,
-		DSN:       m.dsn,
-		Logger:    m.log.With("session", name),
-		Emit:      m.emit(name, engName),
-		Media:     m.media,
-		RawEvents: func() bool { return m.sessionWantsRaw(name) },
-		Behavior:  func() engine.AutoBehavior { return m.sessionBehavior(name) },
-		StoredJID: rec.JID,
+		Session:    name,
+		DSN:        m.dsn,
+		Logger:     m.log.With("session", name),
+		Emit:       m.emit(name, engName),
+		Media:      m.media,
+		RawEvents:  func() bool { return m.sessionWantsRaw(name) },
+		Behavior:   func() engine.AutoBehavior { return m.sessionBehavior(name) },
+		StoredJID:  rec.JID,
+		Recovering: recovering,
 	})
 	if err != nil {
 		_ = m.cache.ReleaseLock(ctx, lockKey(name), m.nodeID)
@@ -285,7 +294,7 @@ func (m *Manager) RestoreOwned(ctx context.Context) {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := m.Start(ctx, r.Name); err != nil && !errors.Is(err, ErrLocked) {
+			if err := m.start(ctx, r.Name, true); err != nil && !errors.Is(err, ErrLocked) {
 				m.log.Warn("restore: falha ao iniciar", "session", r.Name, "err", err)
 			} else {
 				m.log.Info("restore: sessao reconectando", "session", r.Name, "era", r.Status)

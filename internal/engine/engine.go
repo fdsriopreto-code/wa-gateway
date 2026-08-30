@@ -270,6 +270,10 @@ type Deps struct {
 	// vazio para sessao nova. A engine usa para carregar o device certo
 	// quando varias sessoes compartilham o mesmo store.
 	StoredJID string
+	// Recovering indica que a sessao esta sendo retomada no boot (RestoreOwned)
+	// e nao iniciada interativamente. So nesse caso a engine pode adotar um
+	// device orfao do store quando StoredJID esta vazio.
+	Recovering bool
 }
 
 type Factory func(deps Deps) (Engine, error)

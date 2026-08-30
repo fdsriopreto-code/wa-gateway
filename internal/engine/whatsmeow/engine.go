@@ -159,18 +159,27 @@ func (e *Engine) Start(ctx context.Context) error {
 // numero (User do JID) bata com o que a sessao ja pareou. Se nao achar,
 // devolve um device novo (fluxo de QR).
 func (e *Engine) pickDevice(ctx context.Context, container *sqlstore.Container) (*waStore.Device, error) {
-	if e.deps.StoredJID == "" {
-		return container.NewDevice(), nil
-	}
-	want, perr := types.ParseJID(e.deps.StoredJID)
-	if perr != nil || want.User == "" {
-		e.deps.Logger.Warn("StoredJID invalido, tratando como sessao nova", "storedJID", e.deps.StoredJID, "err", perr)
-		return container.NewDevice(), nil
-	}
-
 	all, err := container.GetAllDevices(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listar devices: %w", err)
+	}
+
+	want, perr := types.ParseJID(e.deps.StoredJID)
+	if e.deps.StoredJID == "" || perr != nil || want.User == "" {
+		if e.deps.StoredJID != "" {
+			e.deps.Logger.Warn("StoredJID invalido, tratando como sessao nova", "storedJID", e.deps.StoredJID, "err", perr)
+		}
+		// Sessao sem JID registrado, sendo retomada no boot: se ha EXATAMENTE
+		// um device no store, ele provavelmente e desta sessao — pareou mas o
+		// processo caiu antes de persistir o JID (redeploy no meio do
+		// pareamento). Adota em vez de pedir QR de novo e deixar o device
+		// orfao. Nao vale pra partida interativa (uma sessao nova nao rouba o
+		// device de outra).
+		if e.deps.Recovering && len(all) == 1 && all[0].ID != nil {
+			e.deps.Logger.Warn("StoredJID vazio — adotando o unico device do store", "jid", all[0].ID.String())
+			return all[0], nil
+		}
+		return container.NewDevice(), nil
 	}
 	var exact, byNumber *waStore.Device
 	have := make([]string, 0, len(all))
@@ -208,8 +217,15 @@ func (e *Engine) pumpQR(ch <-chan whatsmeow.QRChannelItem) {
 			e.mu.Unlock()
 			e.emit(events.QRCode, map[string]any{"code": item.Code})
 		case "success":
+			// pareou. Sai de SCAN_QR na hora (senao o console segue mostrando
+			// QR ate o evento Connected) e — o mais importante — o
+			// setStatusLocked emite session.status, o que faz o Manager
+			// persistir sessions.jid AGORA. Sem isso, um restart entre o pair
+			// e o Connected perde o vinculo e a proxima subida pede QR de novo
+			// mesmo com o device ja pareado no store.
 			e.mu.Lock()
 			e.qr = ""
+			e.setStatusLocked(engine.StatusStarting)
 			e.mu.Unlock()
 		case "timeout":
 			e.emit("session.qr.timeout", map[string]any{})
