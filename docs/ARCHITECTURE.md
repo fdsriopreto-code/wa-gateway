@@ -76,7 +76,7 @@ embutido via `//go:embed`.
 | `internal/httpapi` | REST, `/mcp`, `/openapi.json`, `/docs`, console SPA | `httpapi.NewRouter` |
 | `internal/auth` | API key (chave-mestra + tabela `api_keys` com Argon2id) + middleware | `auth.New` |
 | `internal/observability` | logger slog, métricas Prometheus | `NewLogger`, `metrics.go` |
-| `migrations/` | SQL goose, embarcado com `//go:embed` | `0001…0004` |
+| `migrations/` | SQL goose, embarcado com `//go:embed` | `0001…0005` |
 
 ### 2.1 A interface `Engine`
 
@@ -221,7 +221,9 @@ sequenceDiagram
   filas asynq, não do barramento.
 - **`webhook.Dispatcher`**: pool de 6 workers, cache de config por sessão
   (TTL 5s), dedupe de entrega por URL, `TaskID` = `eventID|sha1(url)` (asynq
-  não duplica). Assinatura: `X-Webhook-Signature: sha256=<hmac>`.
+  não duplica). Assinatura: `X-Webhook-Signature: sha256=<hmac>`. O payload
+  completo fica em `webhook_deliveries.payload` → `POST /api/deliveries/{id}/
+  retry` reenfileira (sem TaskID fixo).
 - **`inbox`**: pool de 4 workers → `store.SaveMessage` / `SaveChat` /
   `UpdateAck`. Extrai `mediaMeta` (directPath/mediaKey/sha…) pra permitir
   download posterior sem depender do store.

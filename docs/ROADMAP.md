@@ -60,6 +60,9 @@ Atualizado em **2026-08-30**.
   chega no nó errado é encaminhado pro dono da sessão (reverse-proxy via
   `wa:lock:<s>` → `wa:node:addr:<id>`). Off por padrão. `GET /api/cluster`
   mostra o estado. Console → Monitoramento tem card de infra/nós.
+- **Reenvio manual de webhook** — `POST /api/deliveries/{id}/retry`
+  reenfileira usando o payload guardado (`webhook_deliveries.payload`,
+  migração 0005). Botão "reenviar" nas entregas com falha no console.
 - CI completo + release automático do node n8n por tag.
 
 ---
@@ -68,8 +71,7 @@ Atualizado em **2026-08-30**.
 
 | Item | Por quê | Esboço |
 |---|---|---|
-| **Reenvio manual de webhook** | `POST /api/deliveries/{id}/retry` | precisa guardar o `deliverPayload` (body+secret) numa coluna `jsonb` — migração |
-| **Métricas de negócio** | msgs enviadas/recebidas por sessão, lag da fila | contadores Prometheus com label `session` |
+| **Métricas de negócio** | msgs enviadas/recebidas por sessão, lag da fila | contadores Prometheus com label `session` (cuidar cardinalidade) |
 | **Labels do WhatsApp Business** | eventos `label.*` já chegam, falta expor | `GET /api/{s}/labels`, associar/desassociar em chat/mensagem |
 | **Plugins de saída (NATS / AMQP)** | quem não quer webhook HTTP | interface `Sink` no dispatcher, além do HTTP |
 | **`docs/` versionado** | este conjunto — manter em dia a cada mudança grande | — |

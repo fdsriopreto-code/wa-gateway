@@ -80,6 +80,7 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		r.Get("/api/stats", d.stats)
 		r.Get("/api/cluster", d.cluster)
 		r.Get("/api/deliveries", d.listDeliveries)
+		r.Post("/api/deliveries/{id}/retry", d.retryDelivery)
 		r.Route("/api/keys", func(r chi.Router) {
 			r.Get("/", d.listKeys)
 			r.Post("/", d.createKey)

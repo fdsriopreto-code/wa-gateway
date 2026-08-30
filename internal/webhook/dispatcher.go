@@ -177,7 +177,7 @@ func (d *Dispatcher) enqueue(ctx context.Context, e events.Event, metadata map[s
 	}
 	raw, _ := json.Marshal(p)
 
-	_ = d.store.CreateDelivery(ctx, e.ID, e.Session, wh.URL, e.Name)
+	_ = d.store.CreateDelivery(ctx, e.ID, e.Session, wh.URL, e.Name, raw)
 
 	task := asynq.NewTask(TaskDeliver, raw,
 		asynq.MaxRetry(attempts),
@@ -192,6 +192,29 @@ func (d *Dispatcher) enqueue(ctx context.Context, e events.Event, metadata map[s
 		}
 	}
 	_ = backoff // reservado: politica custom de backoff por webhook
+}
+
+// Retry reenfileira uma entrega já registrada (usa o payload guardado).
+// Enfileira SEM TaskID fixo pra não colidir com o dedupe do dispatch normal.
+func (d *Dispatcher) Retry(ctx context.Context, deliveryID string) error {
+	raw, err := d.store.GetDeliveryPayload(ctx, deliveryID)
+	if err != nil {
+		return fmt.Errorf("entrega %s nao encontrada", deliveryID)
+	}
+	if len(raw) == 0 {
+		return fmt.Errorf("entrega %s sem payload guardado (anterior ao reenvio manual)", deliveryID)
+	}
+	task := asynq.NewTask(TaskDeliver, raw,
+		asynq.MaxRetry(d.maxAttempts),
+		asynq.Timeout(d.http.Timeout+5*time.Second),
+		asynq.Queue("webhook"),
+		asynq.Retention(24*time.Hour),
+	)
+	if _, err := d.client.EnqueueContext(ctx, task); err != nil {
+		return err
+	}
+	_ = d.store.MarkPending(ctx, deliveryID)
+	return nil
 }
 
 // Handler processa a task de entrega (roda nos workers asynq).

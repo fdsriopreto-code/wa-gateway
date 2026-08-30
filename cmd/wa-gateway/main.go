@@ -179,6 +179,7 @@ func run() error {
 		Store:       st,
 		Hub:         hub,
 		Queue:       outQueue,
+		Dispatcher:  dispatcher,
 		Media:       mediaStore,
 		Cache:       rc,
 		Log:         log,

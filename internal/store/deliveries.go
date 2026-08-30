@@ -5,12 +5,27 @@ import (
 	"time"
 )
 
-func (s *Store) CreateDelivery(ctx context.Context, id, session, url, event string) error {
+func (s *Store) CreateDelivery(ctx context.Context, id, session, url, event string, payload []byte) error {
 	_, err := s.Pool.Exec(ctx,
-		`INSERT INTO webhook_deliveries (id, session, url, event) VALUES ($1,$2,$3,$4)
+		`INSERT INTO webhook_deliveries (id, session, url, event, payload) VALUES ($1,$2,$3,$4,$5)
 		 ON CONFLICT (id) DO NOTHING`,
-		id, session, url, event)
+		id, session, url, event, payload)
 	return err
+}
+
+// MarkPending devolve a entrega para "pending" (usado no reenvio manual).
+func (s *Store) MarkPending(ctx context.Context, id string) error {
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE webhook_deliveries SET status='pending', last_error=NULL WHERE id=$1`, id)
+	return err
+}
+
+// GetDeliveryPayload devolve o payload guardado da entrega (envelope + secret
+// + headers), ou nil se a entrega é anterior à coluna payload.
+func (s *Store) GetDeliveryPayload(ctx context.Context, id string) ([]byte, error) {
+	var p []byte
+	err := s.Pool.QueryRow(ctx, `SELECT payload FROM webhook_deliveries WHERE id=$1`, id).Scan(&p)
+	return p, err
 }
 
 func (s *Store) MarkDelivered(ctx context.Context, id string, attempts, code int) error {

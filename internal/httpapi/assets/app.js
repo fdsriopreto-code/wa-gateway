@@ -1096,7 +1096,13 @@ views.monitor={title:"Monitoramento",async render(root){
       {h:"evento",get:d=>d.event},{h:"status",get:d=>badge(d.status)},
       {h:"cód",get:d=>d.responseCode||""},{h:"tent.",get:d=>d.attempts},
       {h:"url",get:d=>h("span",{class:"mono muted wrap"},trunc(d.url,44))},
-      {h:"erro",get:d=>h("span",{class:"muted wrap"},d.lastError||"")}],
+      {h:"erro",get:d=>h("span",{class:"muted wrap"},d.lastError||"")},
+      {h:"",get:d=>d.status==="failed"?h("button",{class:"btn ghost sm",onclick:async(e)=>{
+        const b=e.currentTarget;b.disabled=true;
+        try{await apiData("POST",`/api/deliveries/${encodeURIComponent(d.id)}/retry`);ok("reenfileirada");load();}
+        catch(err){fail(err);b.disabled=false;}
+      }},ic("refresh","sm"),"reenviar"):null},
+    ],
   };
   const load=async()=>{
     const s=sel.value;if(!s){clear(box);box.append(empty("inbox","selecione uma sessão"));return;}

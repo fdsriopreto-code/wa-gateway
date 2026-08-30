@@ -18,6 +18,7 @@ import (
 	"wa-gateway/internal/outbox"
 	"wa-gateway/internal/session"
 	"wa-gateway/internal/store"
+	"wa-gateway/internal/webhook"
 	"wa-gateway/internal/ws"
 )
 
@@ -25,9 +26,10 @@ type Deps struct {
 	Manager     *session.Manager
 	Store       *store.Store
 	Hub         *ws.Hub
-	Queue       *outbox.Queue // fila de saida com pacing; pode ser nil
-	Media       media.Store   // armazenamento de midia; pode ser nil/Disabled
-	Cache       *cache.Redis  // p/ idempotencia; pode ser nil
+	Queue       *outbox.Queue       // fila de saida com pacing; pode ser nil
+	Dispatcher  *webhook.Dispatcher // p/ reenvio manual de webhook; pode ser nil
+	Media       media.Store         // armazenamento de midia; pode ser nil/Disabled
+	Cache       *cache.Redis        // p/ idempotencia; pode ser nil
 	Log         *slog.Logger
 	Version     string
 	Commit      string

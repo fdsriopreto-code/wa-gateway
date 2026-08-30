@@ -54,6 +54,20 @@ func (d Deps) listDeliveries(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, recs)
 }
 
+// POST /api/deliveries/{id}/retry — reenfileira uma entrega de webhook.
+func (d Deps) retryDelivery(w http.ResponseWriter, r *http.Request) {
+	if d.Dispatcher == nil {
+		writeErr(w, http.StatusServiceUnavailable, "unavailable", "dispatcher indisponivel")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := d.Dispatcher.Retry(r.Context(), id); err != nil {
+		writeErr(w, http.StatusBadRequest, "retry_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"requeued": id})
+}
+
 // GET /api/{session}/auth/qr.png — QR atual como imagem.
 func (d Deps) sessionQRImage(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "session")
