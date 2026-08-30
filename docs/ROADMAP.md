@@ -71,6 +71,10 @@ Atualizado em **2026-08-30**.
   a **consumer groups** com `XACK` só no sucesso + `XAUTOCLAIM`. Crash no meio
   de um dispatch → evento reprocessa (mesmo nó ou outro do grupo). Fecha o
   **risco #1** da análise anterior. Testes com `miniredis`.
+- **Escopo de API key por sessão** — `scopes` como `session:<nome>` /
+  `session:*`; `sessionScopeMW` barra fora do escopo (403 `forbidden_session`),
+  `GET /api/sessions` filtra, criar sessão bloqueado, `/ws` exige `?session=`.
+  Console: campo "restringir a sessões" na criação de chave. Fecha o **risco #3**.
 - CI completo + release automático do node n8n por tag.
 
 ---
@@ -134,7 +138,7 @@ Estado honesto depois do batch de escala/robustez.
 | 2 | **Cross-node buffra o corpo.** Com `NODE_ADVERTISE_URL` on, todo POST-JSON é lido inteiro (até 32MB) pra achar `session`. | latência/RAM em envio de mídia grande no modo multi-nó | só afeta multi-nó; single-node não paga nada | tokenizer streaming de JSON + `io.MultiReader` pra restaurar sem bufferizar tudo |
 | 7 | **`message.ack` pode chegar antes do `SaveMessage`** (concorrência no consumer group). `UpdateAck` sem linha = no-op silencioso → ack perdido. | ack de mensagem raramente não persiste | acks chegam segundos depois do save; probabilidade baixa (já era assim no barramento antigo) | handler de ack faz upsert de stub, ou re-tenta com backoff curto |
 | 8 | **Stream `MAXLEN ~100k`.** Se TODOS os consumidores ficarem fora por mais tempo que 100k eventos, o Redis pode aparar entradas ainda não-`XACK`. | perda só se o serviço inteiro ficar down sob alto volume | consumidores moram no mesmo binário do produtor → "todos down" = serviço down | subir o `MAXLEN`, ou trim só por idade (`MINID`) preservando o PEL |
-| 3 | **Escopos de API key são grosseiros.** Quase tudo exige `*`. `listDeliveries`/`retryDelivery` não checam `canAdmin` e uma chave escopada consegue ver entrega de outra sessão. | vazamento entre tenants num cenário multi-cliente | modelo hoje é "1 chave = tudo" | escopos por sessão (`session:vendas:*`) + `Principal.Can` com match de prefixo |
+| 3 | ~~Escopos de API key grosseiros.~~ **RESOLVIDO**: `scopes` como `session:<nome>` (ou `session:*`) + `sessionScopeMW` barram uma chave de tocar sessão fora do escopo; `GET /api/sessions` filtra; criar sessão é bloqueado; `/ws` exige `?session=`. Resta: `listDeliveries`/`retryDelivery` ainda não checam escopo de sessão (a entrega é buscada por `?session=`, então o middleware **já cobre**), mas endpoints puramente admin (`/api/keys`, `/api/stats`, `/api/cluster`) não exigem `canAdmin`. | endpoints admin abertos a qualquer chave `*` | escopo por sessão feito | gate `canAdmin` em `/api/stats`, `/api/cluster`, `/api/deliveries` |
 | 4 | **Sem dead-letter de webhook.** Depois de N tentativas o asynq desiste; a linha fica `failed` sem alerta. | entregas silenciosamente perdidas | botão "reenviar" manual no console | evento `webhook.exhausted` no próprio barramento + métrica |
 | 5 | **Segredos em texto puro.** HMAC secret do webhook mora em `sessions.config` JSONB sem cifra. | quem lê o Postgres lê os segredos | acesso ao banco já é privilegiado | cifrar campos sensíveis com uma key de env (AES-GCM) |
 | 6 | **`migrations` sobem em todo boot sem lock explícito.** 2 nós subindo juntos podem correr. | risco baixo (goose usa `schema_migrations`) | goose serializa por versão | advisory lock no Postgres antes do `Migrate` |
@@ -154,9 +158,10 @@ Estado honesto depois do batch de escala/robustez.
 ### Ordem sugerida daqui
 
 1. ~~Redis Stream no barramento~~ ✅ feito.
-2. **Escopos de API key por sessão** (risco #3) — destrava multi-tenant real.
+2. ~~Escopos de API key por sessão~~ ✅ feito.
 3. **Cifrar segredos** (risco #5) — barato, fecha uma auditoria.
-4. Labels Business · dead-letter de webhook · streaming do body no cross-node.
+4. `canAdmin` nos endpoints de admin (parte do #3).
+5. Labels Business · dead-letter de webhook · streaming do body no cross-node.
 
 ---
 

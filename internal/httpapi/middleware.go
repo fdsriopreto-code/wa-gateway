@@ -103,6 +103,38 @@ func rateLimitMW(rc *cache.Redis, rps, burst float64) func(http.Handler) http.Ha
 	}
 }
 
+// sessionScopeMW barra chaves com escopo por sessao (`session:<name>`) de
+// tocar sessoes fora do escopo. Chave irrestrita (`*` / `session:*`) e a
+// chave-mestra passam sem custo (nem lê o corpo).
+func sessionScopeMW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p, ok := auth.FromContext(r.Context())
+		if !ok || p.Can("*") || p.Can("session:*") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		sess := sessionFromRequest(r)
+		if sess == "" {
+			if r.URL.Path == "/ws" { // stream de todas as sessões: barrado p/ chave escopada
+				writeJSON(w, http.StatusForbidden, map[string]any{
+					"error": "forbidden_session", "message": "chave com escopo por sessão precisa de ?session=<nome> no /ws",
+				})
+				return
+			}
+			next.ServeHTTP(w, r) // endpoint sem sessão (stats, keys, list…)
+			return
+		}
+		if sess == "*" || !p.CanSession(sess) {
+			writeJSON(w, http.StatusForbidden, map[string]any{
+				"error":   "forbidden_session",
+				"message": "esta chave de API não tem acesso à sessão " + sess,
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // corsMW responde preflight e ecoa a origem quando ela esta na lista (ou "*").
 func corsMW(origins []string) func(http.Handler) http.Handler {
 	allowAll := false

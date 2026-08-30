@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"wa-gateway/internal/auth"
 	"wa-gateway/internal/session"
 	"wa-gateway/internal/store"
 )
@@ -50,8 +51,13 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	p, _ := auth.FromContext(r.Context())
+	scoped := p.SessionScoped()
 	out := make([]sessionView, 0, len(recs))
 	for _, rec := range recs {
+		if scoped && !p.CanSession(rec.Name) {
+			continue // chave escopada só enxerga as sessões dela
+		}
 		out = append(out, d.view(rec))
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -65,6 +71,10 @@ func (d Deps) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Name == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name e obrigatorio")
+		return
+	}
+	if p, _ := auth.FromContext(r.Context()); p.SessionScoped() {
+		writeErr(w, http.StatusForbidden, "forbidden_session", "chave com escopo por sessão não pode criar sessão nova")
 		return
 	}
 	if _, err := session.ParseConfig(req.Config); err != nil {

@@ -34,6 +34,33 @@ func (p Principal) Can(scope string) bool {
 	return false
 }
 
+// CanSession diz se o principal pode operar a sessao `name`. Aceita "*",
+// "session:*" (qualquer sessao) ou "session:<name>" (exata).
+func (p Principal) CanSession(name string) bool {
+	for _, s := range p.Scopes {
+		if s == "*" || s == "session:*" || s == "session:"+name {
+			return true
+		}
+	}
+	return false
+}
+
+// SessionScoped diz se o principal NAO tem acesso irrestrito a sessoes
+// (tem so "session:<name>", nunca "*"/"session:*"). Usado para filtrar
+// listagens e barrar criacao de sessao nova.
+func (p Principal) SessionScoped() bool {
+	restricted := false
+	for _, s := range p.Scopes {
+		switch {
+		case s == "*" || s == "session:*":
+			return false
+		case len(s) > 8 && s[:8] == "session:":
+			restricted = true
+		}
+	}
+	return restricted
+}
+
 func FromContext(ctx context.Context) (Principal, bool) {
 	p, ok := ctx.Value(principalKey).(Principal)
 	return p, ok

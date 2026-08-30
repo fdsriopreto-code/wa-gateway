@@ -35,6 +35,7 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(authn.Middleware)
 		r.Use(clusterProxyMW(d.Manager, d.Log))
+		r.Use(sessionScopeMW)
 		if d.Cache != nil && d.RateRPS > 0 {
 			burst := d.RateBurst
 			if burst <= 0 {

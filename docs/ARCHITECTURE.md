@@ -326,6 +326,12 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
 - **Chave-mestra** (`API_KEY`) → `Principal{Scopes: ["*"]}`. Isenta de rate limit.
 - **Tabela `api_keys`**: hash Argon2id, `scopes text[]`, `revoked_at`.
   `Principal.Can(scope)` = `*` ou match exato. Rotas de admin usam `canAdmin`.
+- **Escopo por sessão** (`sessionScopeMW`): uma chave com `scopes` como
+  `["session:vendas", "session:suporte"]` só opera essas sessões — o
+  middleware pega o nome da sessão (path/query/corpo, via `sessionFromRequest`)
+  e 403 `forbidden_session` se `!CanSession(nome)`. `*` e `session:*` passam
+  livres. Chave escopada: `GET /api/sessions` filtra pras dela, `POST
+  /api/sessions` (criar) é barrado, `/ws` exige `?session=<nome>`.
 - **Rate limit** (`rateLimitMW`): token bucket por `KeyID` no Redis, fail-open.
   Resposta `429 rate_limited` + `Retry-After` + headers `X-RateLimit-*`.
 - Rotas públicas (sem auth): `/health`, `/ready`, `/metrics`, `/api/version`,

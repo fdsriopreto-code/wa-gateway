@@ -1149,9 +1149,12 @@ views.keys={title:"API keys",async render(root){
     h("div",{class:"card pad"},
       h("div",{class:"frow"},
         h("div",{class:"field"},h("label",{},"label"),h("input",{id:"nk-l",placeholder:"app-x"})),
-        h("div",{class:"field"},h("label",{},"escopos (vírgula, vazio = *)"),h("input",{id:"nk-s",placeholder:"*"}))),
+        h("div",{class:"field"},h("label",{},"escopos (vírgula, vazio = *)"),h("input",{id:"nk-s",placeholder:"*"})),
+        h("div",{class:"field"},h("label",{},"restringir a sessões (vírgula)"),h("input",{id:"nk-ss",placeholder:"vendas, suporte"}))),
+      h("p",{class:"hint",style:"margin-top:4px"},"Preencher \"restringir a sessões\" gera escopos ",h("code",{},"session:<nome>"),": a chave só enxerga e opera essas sessões, e não pode criar sessão nova."),
       h("div",{class:"btn-row",style:"margin-top:10px"},h("button",{class:"btn",onclick:async e=>{
         const scopes=$("#nk-s").value.split(",").map(x=>x.trim()).filter(Boolean);
+        $("#nk-ss").value.split(",").map(x=>x.trim()).filter(Boolean).forEach(s=>scopes.push("session:"+s));
         e.target.disabled=true;
         try{const r=await apiData("POST","/api/keys",{label:$("#nk-l").value,scopes});
           modal("Chave criada","copie agora — não é exibida de novo",h("div",{},h("pre",{class:"out"},r.token),
