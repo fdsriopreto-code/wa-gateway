@@ -263,16 +263,28 @@ func (m *Manager) RestoreOwned(ctx context.Context) {
 		string(engine.StatusStarting): true,
 		string(engine.StatusScanQR):   true, // estava pareando: retoma o fluxo
 	}
+	// reconecta em paralelo (limitado) — com muitas sessoes, sequencial
+	// levaria minutos.
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
 	for _, r := range recs {
 		if !restorable[r.Status] {
 			continue
 		}
-		if err := m.Start(ctx, r.Name); err != nil && !errors.Is(err, ErrLocked) {
-			m.log.Warn("restore: falha ao iniciar", "session", r.Name, "err", err)
-		} else {
-			m.log.Info("restore: sessao reconectando", "session", r.Name, "era", r.Status)
-		}
+		r := r
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := m.Start(ctx, r.Name); err != nil && !errors.Is(err, ErrLocked) {
+				m.log.Warn("restore: falha ao iniciar", "session", r.Name, "err", err)
+			} else {
+				m.log.Info("restore: sessao reconectando", "session", r.Name, "era", r.Status)
+			}
+		}()
 	}
+	wg.Wait()
 }
 
 func (m *Manager) refreshLock(name string, stop <-chan struct{}) {

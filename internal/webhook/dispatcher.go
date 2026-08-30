@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -38,6 +39,7 @@ type Dispatcher struct {
 	log         *slog.Logger
 	http        *http.Client
 	maxAttempts int
+	cfgCache    sync.Map // session -> cachedCfg
 }
 
 func NewDispatcher(st *store.Store, client *asynq.Client, log *slog.Logger, timeout time.Duration, maxAttempts int) *Dispatcher {
@@ -56,10 +58,26 @@ func NewDispatcher(st *store.Store, client *asynq.Client, log *slog.Logger, time
 	}
 }
 
-// Run consome o barramento ate o contexto ser cancelado.
+// Run consome o barramento ate o contexto ser cancelado. Um pool processa os
+// eventos para que a leitura de config no Postgres nao serialize o dispatch.
 func (d *Dispatcher) Run(ctx context.Context, bus *events.Bus) {
 	ch, cancel := bus.Subscribe("webhook", "*", 16384)
 	defer cancel()
+
+	const workers = 6
+	work := make(chan events.Event, 4096)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for e := range work {
+				d.handle(ctx, e)
+			}
+		}()
+	}
+	defer func() { close(work); wg.Wait() }()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -68,26 +86,53 @@ func (d *Dispatcher) Run(ctx context.Context, bus *events.Bus) {
 			if !ok {
 				return
 			}
-			d.handle(ctx, e)
+			select {
+			case work <- e:
+			default:
+				d.log.Warn("webhook: pool cheio, evento descartado", "event", e.Name)
+			}
 		}
 	}
 }
 
-func (d *Dispatcher) handle(ctx context.Context, e events.Event) {
-	rec, err := d.store.GetSession(ctx, e.Session)
+type cachedCfg struct {
+	webhooks []session.WebhookConfig
+	metadata map[string]string
+	exp      time.Time
+}
+
+// sessionCfg le a config da sessao com cache curto (5s) — evita um SELECT
+// no Postgres por evento.
+func (d *Dispatcher) sessionCfg(ctx context.Context, name string) ([]session.WebhookConfig, map[string]string, bool) {
+	if v, ok := d.cfgCache.Load(name); ok {
+		c := v.(cachedCfg)
+		if time.Now().Before(c.exp) {
+			return c.webhooks, c.metadata, true
+		}
+	}
+	rec, err := d.store.GetSession(ctx, name)
 	if err != nil {
-		return
+		return nil, nil, false
 	}
 	cfg, err := session.ParseConfig(rec.Config)
 	if err != nil {
-		d.log.Warn("config de sessao invalida", "session", e.Session, "err", err)
+		d.log.Warn("config de sessao invalida", "session", name, "err", err)
+		return nil, nil, false
+	}
+	d.cfgCache.Store(name, cachedCfg{webhooks: cfg.Webhooks, metadata: cfg.Metadata, exp: time.Now().Add(5 * time.Second)})
+	return cfg.Webhooks, cfg.Metadata, true
+}
+
+func (d *Dispatcher) handle(ctx context.Context, e events.Event) {
+	webhooks, metadata, ok := d.sessionCfg(ctx, e.Session)
+	if !ok {
 		return
 	}
-	for _, wh := range cfg.Webhooks {
+	for _, wh := range webhooks {
 		if wh.URL == "" || !events.MatchAny(wh.Events, e.Name) {
 			continue
 		}
-		d.enqueue(ctx, e, cfg.Metadata, wh)
+		d.enqueue(ctx, e, metadata, wh)
 	}
 }
 
