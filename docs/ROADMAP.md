@@ -117,6 +117,42 @@ Se ainda assim quiser um endpoint **experimental** `POST /api/sendButtons`
 
 ---
 
+## 🔬 Análise crítica (2026-08-30)
+
+Estado honesto depois do batch de escala/robustez.
+
+### Riscos que continuam de pé
+
+| # | Risco | Impacto | Mitigação atual | Fix de verdade |
+|---|---|---|---|---|
+| 1 | **Barramento é in-process.** `events.Bus` entrega por canal Go. `SubscribeReliable` espera 250ms, mas sob pico sustentado ainda descarta → webhook não enfileirado (sem retry) / mensagem não persistida. | perda silenciosa de evento em pico | `maxWait` 250ms + contador `wa_bus_dropped_total` + log a cada 100 | trocar o backbone por **Redis Stream** (`XADD`/`XREADGROUP`) — consumidores com ack, replay, sem drop. É o próximo grande item. |
+| 2 | **Cross-node buffra o corpo.** Com `NODE_ADVERTISE_URL` on, todo POST-JSON é lido inteiro (até 32MB) pra achar `session`. | latência/RAM em envio de mídia grande no modo multi-nó | só afeta multi-nó; single-node não paga nada | tokenizer streaming de JSON + `io.MultiReader` pra restaurar sem bufferizar tudo |
+| 3 | **Escopos de API key são grosseiros.** Quase tudo exige `*`. `listDeliveries`/`retryDelivery` não checam `canAdmin` e uma chave escopada consegue ver entrega de outra sessão. | vazamento entre tenants num cenário multi-cliente | modelo hoje é "1 chave = tudo" | escopos por sessão (`session:vendas:*`) + `Principal.Can` com match de prefixo |
+| 4 | **Sem dead-letter de webhook.** Depois de N tentativas o asynq desiste; a linha fica `failed` sem alerta. | entregas silenciosamente perdidas | botão "reenviar" manual no console | evento `webhook.exhausted` no próprio barramento + métrica |
+| 5 | **Segredos em texto puro.** HMAC secret do webhook mora em `sessions.config` JSONB sem cifra. | quem lê o Postgres lê os segredos | acesso ao banco já é privilegiado | cifrar campos sensíveis com uma key de env (AES-GCM) |
+| 6 | **`migrations` sobem em todo boot sem lock explícito.** 2 nós subindo juntos podem correr. | risco baixo (goose usa `schema_migrations`) | goose serializa por versão | advisory lock no Postgres antes do `Migrate` |
+
+### O que ficou bom
+
+- **Isolamento do motor** — a interface `Engine` segurou 6 features novas sem
+  vazar whatsmeow pra fora. Meta Cloud API entra sem dor quando for a hora.
+- **Degradação** — S3 fora, Redis fora (fail-open no rate limit), nó dono fora
+  (502 claro) — nada derruba o processo.
+- **Custo zero quando desligado** — rate limit (`RPS=0`), cross-node
+  (`ADVERTISE_URL=""`), WS pub/sub (1 nó): todos viram um `if` e somem.
+- **`spec.go` + `/openapi.json` + testes** mantêm a superfície REST honesta.
+- **Observabilidade** cobre o que importa: HTTP, eventos, drops, entregas,
+  rate limit, msgs enviadas/recebidas, sessões ativas, clientes WS.
+
+### Ordem sugerida daqui
+
+1. **Redis Stream no barramento** (risco #1) — maior ganho de robustez.
+2. **Escopos de API key por sessão** (risco #3) — destrava multi-tenant real.
+3. **Cifrar segredos** (risco #5) — barato, fecha uma auditoria.
+4. Labels Business · dead-letter de webhook · streaming do body no cross-node.
+
+---
+
 ## 🧭 Princípios de crescimento
 
 1. **A interface `Engine` é sagrada.** Nada fora de `internal/engine/whatsmeow`
