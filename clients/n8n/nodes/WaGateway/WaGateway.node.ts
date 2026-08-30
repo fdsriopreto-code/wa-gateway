@@ -81,6 +81,15 @@ const OPS: Op[] = [
 	// ---- Chat / histórico
 	{ resource: 'chat', operation: 'list', method: 'GET', path: (c) => `/api/chats?session=${S(c)}&limit=${c.get('limit', 100)}` },
 	{ resource: 'chat', operation: 'history', method: 'GET', path: (c) => `/api/chats/${encodeURIComponent(c.get('chatId') as string)}/messages?session=${S(c)}&limit=${c.get('limit', 50)}` },
+
+	// ---- Label (WhatsApp Business)
+	{ resource: 'label', operation: 'list', method: 'GET', path: (c) => `/api/${S(c)}/labels` },
+	{ resource: 'label', operation: 'edit', method: 'POST', path: (c) => `/api/${S(c)}/labels`,
+		body: (c) => ({ labelId: c.get('labelId'), name: c.get('name'), color: c.get('color', 0), deleted: c.get('deleted', false) }) },
+	{ resource: 'label', operation: 'chat', method: 'POST', path: (c) => `/api/${S(c)}/labels/chat`,
+		body: (c) => ({ chatId: c.get('chatId'), labelId: c.get('labelId'), on: c.get('on', true) }) },
+	{ resource: 'label', operation: 'message', method: 'POST', path: (c) => `/api/${S(c)}/labels/message`,
+		body: (c) => ({ chatId: c.get('chatId'), messageId: c.get('messageId'), labelId: c.get('labelId'), on: c.get('on', true) }) },
 ];
 const queue = (c: Ctx): IDataObject => (c.get('enqueue', false) ? { enqueue: true, delay: c.get('delay', '') || undefined } : {});
 const lines = (c: Ctx, n: string) => String(c.get(n, '')).split('\n').map((x) => x.trim()).filter(Boolean);
@@ -108,6 +117,7 @@ export class WaGateway implements INodeType {
 					{ name: 'Grupo', value: 'group' },
 					{ name: 'Contato', value: 'contact' },
 					{ name: 'Conversa (histórico)', value: 'chat' },
+					{ name: 'Etiqueta (Business)', value: 'label' },
 				],
 				default: 'message',
 			},
@@ -127,9 +137,10 @@ export class WaGateway implements INodeType {
 			], 'list'),
 			opt('contact', [['Listar agenda', 'list'], ['Checar número', 'check'], ['Info de perfil', 'info'], ['Foto de perfil', 'picture']], 'list'),
 			opt('chat', [['Listar conversas', 'list'], ['Histórico da conversa', 'history']], 'history'),
+			opt('label', [['Listar', 'list'], ['Criar/editar', 'edit'], ['Etiquetar chat', 'chat'], ['Etiquetar mensagem', 'message']], 'list'),
 
 			// ---- common fields
-			str('session', 'Sessão', { required: true, show: { resource: ['message', 'group', 'contact', 'chat'] } }),
+			str('session', 'Sessão', { required: true, show: { resource: ['message', 'group', 'contact', 'chat', 'label'] } }),
 			str('session', 'Sessão', { required: true, show: { resource: ['session'], operation: ['get', 'start', 'stop', 'restart', 'logout', 'qr', 'pairCode', 'me'] } }),
 			str('chatId', 'Chat ID', { placeholder: '5599999999999@s.whatsapp.net', required: true,
 				show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendLocation', 'sendPoll', 'react', 'forward'] } }),
@@ -201,6 +212,15 @@ export class WaGateway implements INodeType {
 			// chat
 			num('limit', 'Limite', { default: 50, show: { resource: ['chat'] } }),
 			num('limit', 'Limite (0 = tudo)', { default: 0, show: { resource: ['contact'], operation: ['list'] } }),
+
+			// label
+			str('labelId', 'ID da etiqueta', { required: true, show: { resource: ['label'], operation: ['edit', 'chat', 'message'] } }),
+			str('name', 'Nome', { show: { resource: ['label'], operation: ['edit'] } }),
+			num('color', 'Cor (0-19)', { default: 0, show: { resource: ['label'], operation: ['edit'] } }),
+			bool('deleted', 'Apagar', false, { show: { resource: ['label'], operation: ['edit'] } }),
+			str('chatId', 'Chat ID', { required: true, show: { resource: ['label'], operation: ['chat', 'message'] } }),
+			str('messageId', 'Message ID', { required: true, show: { resource: ['label'], operation: ['message'] } }),
+			bool('on', 'Aplicar (ligar)', true, { show: { resource: ['label'], operation: ['chat', 'message'] } }),
 		],
 	};
 

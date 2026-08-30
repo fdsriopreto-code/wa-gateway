@@ -76,9 +76,14 @@ Atualizado em **2026-08-30**.
   `GET /api/sessions` filtra, criar sessão bloqueado, `/ws` exige `?session=`.
   Console: campo "restringir a sessões" na criação de chave. Fecha o **risco #3**.
 - **Cifra de secrets em repouso** — `internal/secret` (AES-256-GCM,
-  `SECRET_KEY`). `webhooks[].hmac.secret` sai cifrado (`enc:v1:…`) no
-  Postgres; leitura decifra. Migração lazy. `/api/stats` e `/api/cluster`
-  agora exigem `canAdmin`. Fecha o **risco #5**.
+  `SECRET_KEY` + `SECRET_KEY_OLD` p/ rotação). `webhooks[].hmac.secret` sai
+  cifrado (`enc:v1:…`) no Postgres; leitura decifra. Migração lazy.
+  `/api/stats` e `/api/cluster` exigem `canAdmin`. Fecha o **risco #5**.
+- **Labels do WhatsApp Business** — `engine.Labels/EditLabel/SetChatLabel/
+  SetMessageLabel` (via `client.SendAppState` + `appstate.BuildLabel*`).
+  `GET/POST /api/{s}/labels`, `/labels/chat`, `/labels/message`. Cache de
+  labels montado dos eventos `LabelEdit` (re-sync no reconnect). MCP:
+  `list_labels`, `label_chat`. n8n: recurso "Etiqueta" (node v0.4.0).
 - CI completo + release automático do node n8n por tag.
 
 ---
@@ -163,11 +168,11 @@ Estado honesto depois do batch de escala/robustez.
 
 1. ~~Redis Stream no barramento~~ ✅
 2. ~~Escopos de API key por sessão~~ ✅
-3. ~~Cifrar segredos + `canAdmin` nos endpoints globais~~ ✅
-4. **Labels do WhatsApp Business** — eventos `label.*` já chegam; falta
-   `GET /api/{s}/labels` + associar/desassociar.
-5. **Dead-letter de webhook** — evento `webhook.exhausted` após N falhas.
-6. Streaming do body no cross-node (risco #2) · rotação de `SECRET_KEY`.
+3. ~~Cifrar segredos + `canAdmin` + rotação `SECRET_KEY`~~ ✅
+4. ~~Riscos residuais #1/#2/#7~~ ✅
+5. ~~Labels do WhatsApp Business~~ ✅
+6. **Dead-letter de webhook** — evento `webhook.exhausted` após N falhas.
+7. Motor Meta Cloud API (botões/listas) · plugins NATS/AMQP.
 
 ---
 

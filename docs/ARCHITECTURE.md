@@ -363,6 +363,9 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
   `invite-link`, `join`.
 - **Perfil/conta:** `/{s}/me`, `profile/status`, `presence`, `blocklist`,
   `block`.
+- **Labels (Business):** `GET/POST /api/{s}/labels`, `/labels/chat`,
+  `/labels/message`. Mutação via `client.SendAppState`; listagem é um cache
+  local alimentado pelos eventos `LabelEdit` (re-sync no reconnect).
 - **Histórico:** `GET /api/chats`, `/api/chats/{chatId}/messages?before=`,
   `/api/messages/{id}/download`, `POST /api/{s}/media/download` (usa `mediaMeta`
   do evento — sem depender do store).

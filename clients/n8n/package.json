@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-wa-gateway",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Node n8n para o wa-gateway — API HTTP multi-sessão de WhatsApp",
   "keywords": ["n8n-community-node-package", "n8n", "whatsapp", "wa-gateway", "whatsapp-api"],
   "license": "MIT",

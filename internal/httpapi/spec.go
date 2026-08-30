@@ -57,6 +57,12 @@ var specEndpoints = []ep{
 	{"POST", "/api/sendSeen", "Messaging", "Marcar como lida", map[string]any{"session": "default", "chatId": "…", "messageId": "<id>"}, nil},
 	{"POST", "/api/presence", "Messaging", "Presença no chat (digitando…)", map[string]any{"session": "default", "chatId": "…", "state": "typing"}, nil},
 
+	// ---- labels (Business)
+	{"GET", "/api/{session}/labels", "Labels", "Listar etiquetas", nil, nil},
+	{"POST", "/api/{session}/labels", "Labels", "Criar/editar/apagar etiqueta", map[string]any{"labelId": "1", "name": "Cliente VIP", "color": 0, "deleted": false}, nil},
+	{"POST", "/api/{session}/labels/chat", "Labels", "Etiquetar um chat", map[string]any{"chatId": "…@s.whatsapp.net", "labelId": "1", "on": true}, nil},
+	{"POST", "/api/{session}/labels/message", "Labels", "Etiquetar uma mensagem", map[string]any{"chatId": "…", "messageId": "<id>", "labelId": "1", "on": true}, nil},
+
 	// ---- contatos
 	{"GET", "/api/contacts", "Contacts", "Listar agenda da sessão", nil, []string{"session", "q?", "limit?"}},
 	{"GET", "/api/contacts/check", "Contacts", "Número está no WhatsApp?", nil, []string{"session", "phone"}},

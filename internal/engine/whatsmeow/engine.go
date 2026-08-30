@@ -52,6 +52,11 @@ type Engine struct {
 	// textos que vem atras).
 	mediaJobs chan *waEvents.Message
 	mediaWG   sync.WaitGroup
+
+	// cache de labels (Business) montado a partir dos eventos LabelEdit; o
+	// whatsmeow re-sincroniza via app state no reconnect.
+	labelsMu sync.RWMutex
+	labels   map[string]engine.Label
 }
 
 const mediaWorkers = 4
@@ -246,6 +251,10 @@ func (e *Engine) handleEvent(raw any) {
 		if st == engine.StatusWorking && e.behavior().AutoOnline {
 			go e.goOnline()
 		}
+	}
+
+	if le, ok := raw.(*waEvents.LabelEdit); ok {
+		e.rememberLabel(le)
 	}
 
 	// mensagens e recibos saem com payload normalizado (achatado). "raw" so

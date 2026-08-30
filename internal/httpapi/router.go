@@ -77,6 +77,12 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		r.Get("/api/{session}/blocklist", d.getBlocklist)
 		r.Post("/api/{session}/block", d.setBlocked)
 
+		// --- labels (WhatsApp Business) ---
+		r.Get("/api/{session}/labels", d.listLabels)
+		r.Post("/api/{session}/labels", d.editLabel)
+		r.Post("/api/{session}/labels/chat", d.labelChat)
+		r.Post("/api/{session}/labels/message", d.labelMessage)
+
 		// --- dashboard / auditoria ---
 		r.Get("/api/stats", d.stats)
 		r.Get("/api/cluster", d.cluster)

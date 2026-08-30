@@ -97,6 +97,13 @@ type Contact struct {
 	VCard string `json:"vcard,omitempty"`
 }
 
+// Label e uma etiqueta do WhatsApp Business.
+type Label struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Color int32  `json:"color"`
+}
+
 // ContactEntry e uma entrada da agenda da sessao (contact store do whatsmeow).
 type ContactEntry struct {
 	JID          string `json:"jid"`
@@ -208,6 +215,12 @@ type Engine interface {
 	GetUserInfo(ctx context.Context, jids []string) ([]UserInfo, error)
 	GetProfilePicture(ctx context.Context, jid string, preview bool) (string, error)
 	Contacts(ctx context.Context) ([]ContactEntry, error)
+
+	// --- labels (WhatsApp Business) ---
+	Labels(ctx context.Context) ([]Label, error)
+	EditLabel(ctx context.Context, labelID, name string, color int32, deleted bool) error
+	SetChatLabel(ctx context.Context, chatID, labelID string, on bool) error
+	SetMessageLabel(ctx context.Context, chatID, messageID, labelID string, on bool) error
 	DownloadMedia(ctx context.Context, m StoredMedia) (data []byte, mimetype string, err error)
 
 	// --- perfil / conta ---

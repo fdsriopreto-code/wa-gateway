@@ -421,6 +421,37 @@ var mcpTools = []mcpTool{
 		},
 	},
 	{
+		name: "list_labels", desc: "Lista as etiquetas (WhatsApp Business) da sessão.",
+		schema: obj([]string{"session"}, map[string]any{"session": pstr("sessão")}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			return eng.Labels(ctx)
+		},
+	},
+	{
+		name: "label_chat", desc: "Aplica (on=true) ou remove (on=false) uma etiqueta de um chat.",
+		schema: obj([]string{"session", "chatId", "labelId"}, map[string]any{
+			"session": pstr("sessão"), "chatId": pstr("chat"), "labelId": pstr("id da etiqueta"), "on": pbool("aplicar? (default true)"),
+		}),
+		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
+			eng, err := d.mcpEngine(s(a, "session"))
+			if err != nil {
+				return nil, err
+			}
+			on := true
+			if v, ok := a["on"].(bool); ok {
+				on = v
+			}
+			if err := eng.SetChatLabel(ctx, s(a, "chatId"), s(a, "labelId"), on); err != nil {
+				return nil, err
+			}
+			return map[string]any{"ok": true}, nil
+		},
+	},
+	{
 		name: "list_groups", desc: "Lista os grupos da sessão com jid, nome e nº de participantes.",
 		schema: obj([]string{"session"}, map[string]any{"session": pstr("sessão")}),
 		run: func(ctx context.Context, d Deps, a map[string]any) (any, error) {
