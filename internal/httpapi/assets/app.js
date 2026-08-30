@@ -587,7 +587,7 @@ views.sessions={title:"Sessões",async render(root){
   const setQR=(slot,s)=>{
     clear(slot);
     if(s.status==="SCAN_QR_CODE"){
-      const img=h("img",{alt:"QR",src:qrURL(s.name)+Date.now()});
+      const img=h("img",{alt:"QR",src:qrURL(s.name)+Date.now(),onerror(){this.style.visibility="hidden";}});
       slot.append(h("div",{class:"qrbox"},img),
         h("div",{class:"muted",style:"text-align:center;font-size:11px;margin-top:6px"},"WhatsApp → Aparelhos conectados → Conectar"),
         h("div",{style:"text-align:center;margin-top:6px"},
@@ -607,11 +607,15 @@ views.sessions={title:"Sessões",async render(root){
     r.card.querySelector(".jid").textContent=s.jid||"sem JID";
     if(s.status!==r.status){
       clear(r.badgeSlot); r.badgeSlot.append(badge(s.status));
-      if(s.status!=="SCAN_QR_CODE") setQR(r.qrSlot,s);
       r.status=s.status;
       if(s.status==="WORKING"&&pendingQR.has(s.name)){pendingQR.delete(s.name);ok(s.name+" conectada ✓");}
     }
-    if(s.status==="SCAN_QR_CODE"&&!r.qrSlot.querySelector("img")) setQR(r.qrSlot,s);
+    // o painel de QR sempre reflete o status atual — some assim que a sessão
+    // sai de SCAN_QR_CODE (conectou, parou, etc.), independente de ter havido
+    // "mudança" nesse tick.
+    const hasQR=!!r.qrSlot.querySelector(".qrbox");
+    if(s.status==="SCAN_QR_CODE"&&!hasQR) setQR(r.qrSlot,s);
+    else if(s.status!=="SCAN_QR_CODE"&&hasQR) clear(r.qrSlot);
   };
   const refreshQR=async()=>{ // troca a imagem só quando o code do whatsmeow gira
     for(const [name,r] of refs){
@@ -835,7 +839,12 @@ function qrModal(name){
     try{
       const s=await apiData("GET","/api/sessions/"+name);
       sub.textContent=label[s.status]||s.status;
-      if(s.status==="WORKING"){stop=true;ok(name+" conectada ✓");clear($("#modal-root"));route();return;}
+      // fecha assim que o fluxo de pareamento termina — em QUALQUER estado
+      // que não seja "aguardando QR" ou "conectando" (não deixa modal preso).
+      if(s.status!=="SCAN_QR_CODE"&&s.status!=="STARTING"){
+        stop=true; if(s.status==="WORKING")ok(name+" conectada ✓");
+        clear($("#modal-root")); route(); return;
+      }
       if(s.status==="SCAN_QR_CODE"){
         let code=null;try{code=(await apiData("GET",`/api/${encodeURIComponent(name)}/auth/qr`)).code;}catch{}
         if(code&&code!==last){last=code;if(box.classList.contains("wait")){box.className="qr";clear(box);box.append(img);}
