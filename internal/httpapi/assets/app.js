@@ -736,6 +736,12 @@ function cfgModal(s){
   const autoReadChk=h("input",{type:"checkbox",checked:cfg.autoRead||undefined});
   const autoOnlineChk=h("input",{type:"checkbox",checked:cfg.autoOnline||undefined});
 
+  // --- mídia ---
+  const mc=cfg.media||{};
+  const mStoreChk=h("input",{type:"checkbox",checked:(mc.store!==false)});
+  const TTLS=[["","usar padrão do servidor"],["0","nunca apagar"],["5m","5 minutos"],["1h","1 hora"],["6h","6 horas"],["24h","24 horas"],["168h","7 dias"],["720h","30 dias"],["2160h","90 dias"]];
+  const mTtlSel=h("select",{},TTLS.map(([v,l])=>h("option",{value:v,selected:(mc.ttl||"")===v||undefined},l)));
+
   const isCloud=s.engine==="cloud"||!!cfg.cloud;
   const cc=cfg.cloud||{};
   const clPnid=h("input",{value:cc.phoneNumberId||""});
@@ -744,10 +750,12 @@ function cfgModal(s){
   const clVerify=h("input",{value:cc.verifyToken||""});
   const clSecret=h("input",{value:cc.appSecret||""});
 
+  const mediaPane=isCloud?"4":"3";
   const bodyNode=h("div",{},
     h("div",{class:"tabs",style:"margin-bottom:14px"},
       tabBtn("Webhooks",true),tabBtn("Fila de saída"),tabBtn("Avançado"),
-      isCloud?tabBtn("Cloud API"):null),
+      isCloud?tabBtn("Cloud API"):null,
+      tabBtn("Mídia")),
     // pane webhooks
     h("div",{class:"cfg-pane","data-pane":"0"},
       whList,
@@ -783,6 +791,24 @@ function cfgModal(s){
       h("div",{class:"field",style:"margin-top:6px"},h("label",{},"Webhook (cole na Meta)"),
         h("div",{class:"out-bar"},h("code",{class:"mono wrap"},`${LS.base}/api/${encodeURIComponent(s.name)}/cloud/webhook`),
           copyBtn("copiar",`${LS.base}/api/${encodeURIComponent(s.name)}/cloud/webhook`)))):null,
+    // pane mídia
+    h("div",{class:"cfg-pane","data-pane":mediaPane,hidden:true},
+      h("p",{class:"hint",style:"margin-bottom:10px"},"Vale só quando o servidor tem ",h("code",{},"MEDIA_BACKEND=s3"),". Ajuda a não lotar o bucket."),
+      h("label",{class:"check",style:"margin-bottom:12px"},mStoreChk,h("span",{},"guardar imagens / áudios / vídeos recebidos no storage")),
+      h("div",{class:"field"},h("label",{},"apagar automaticamente após"),mTtlSel),
+      h("div",{class:"btn-row",style:"margin-top:14px"},
+        h("button",{class:"btn danger ghost sm",onclick:async e=>{
+          if(!confirm(`Apagar TODAS as mídias já guardadas da sessão "${s.name}"?`))return;
+          e.target.disabled=true;
+          try{const r=await apiData("POST",`/api/${encodeURIComponent(s.name)}/media/purge`,{});ok(`${r.deleted} mídia(s) apagada(s)`);}
+          catch(err){fail(err);}finally{e.target.disabled=false;}
+        }},ic("trash","sm"),"Apagar mídias desta sessão agora"),
+        h("button",{class:"btn ghost sm",onclick:async e=>{
+          const d=prompt("Apagar mídias mais velhas que (ex.: 168h, 30d… use h):","720h");if(!d)return;
+          e.target.disabled=true;
+          try{const r=await apiData("POST",`/api/${encodeURIComponent(s.name)}/media/purge`,{olderThan:d});ok(`${r.deleted} apagada(s) de ${r.matched}`);}
+          catch(err){fail(err);}finally{e.target.disabled=false;}
+        }},ic("clock","sm"),"…só as antigas"))),
     h("div",{class:"btn-row",style:"margin-top:18px"},
       h("button",{class:"btn",onclick:save},ic("check","sm"),"Salvar configuração")),
   );
@@ -818,6 +844,10 @@ function cfgModal(s){
       if(clVerify.value.trim())out.cloud.verifyToken=clVerify.value.trim();
       if(clSecret.value.trim())out.cloud.appSecret=clSecret.value.trim();
     }
+    const md={};
+    if(!mStoreChk.checked)md.store=false;
+    if(mTtlSel.value)md.ttl=mTtlSel.value;
+    if(Object.keys(md).length)out.media=md;
     return out;
   }
   function syncPreview(){const p=$("#cfg-preview");if(p)p.textContent=JSON.stringify(collect(),null,2);}

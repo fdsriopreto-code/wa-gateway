@@ -74,11 +74,11 @@ pub/sub de WebSocket. **Um binário** — o console web é embutido via `//go:em
 | `internal/inbox` | consome o barramento → persiste mensagens/chats/acks | `inbox.Consumer.Run` |
 | `internal/outbox` | fila de saída com *pacing* anti-ban (slot por sessão no Redis) | `outbox.NewQueue`, `outbox.NewWorker` |
 | `internal/ws` | WebSocket + fan-out de eventos entre nós via Redis pub/sub | `ws.NewHub`, `Hub.Run` |
-| `internal/media` | armazenamento S3/MinIO opcional + `MediaSink` | `media.NewS3`, `media.NewSink` |
+| `internal/media` | armazenamento S3/MinIO opcional + `MediaSink` + coletor de TTL | `media.NewS3`, `media.NewSink` |
 | `internal/httpapi` | REST, `/mcp`, `/openapi.json`, `/docs`, console SPA | `httpapi.NewRouter` |
 | `internal/auth` | API key (chave-mestra + tabela `api_keys` com Argon2id) + middleware | `auth.New` |
 | `internal/observability` | logger slog, métricas Prometheus | `NewLogger`, `metrics.go` |
-| `migrations/` | SQL goose, embarcado com `//go:embed` | `0001…0006` |
+| `migrations/` | SQL goose, embarcado com `//go:embed` | `0001…0007` |
 
 ### 2.1 A interface `Engine`
 
@@ -302,6 +302,8 @@ Tudo por env var. Padrões entre `()`.
 | `OUTBOX_MIN_INTERVAL` (`3s`) / `OUTBOX_JITTER` (`2s`) / `OUTBOX_DAILY_LIMIT` (`0`=∞) | pacing global da fila de saída |
 | `MESSAGE_STORE` (`on`) | persistir mensagens/chats. `off` desliga o `inbox` |
 | `MEDIA_BACKEND` (`none` / `s3`) | ingestão de mídia |
+| `MEDIA_TTL` (`0`) | apaga a mídia guardada N depois (0 = pra sempre). Override: `config.media.ttl` |
+| `MEDIA_GC_INTERVAL` (`5m`) | varredura do coletor de mídia vencida |
 | `S3_ENDPOINT` `S3_REGION` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_USE_SSL` `S3_PATH_STYLE` `S3_PUBLIC_BASE_URL` | config S3/MinIO |
 | `CORS_ORIGINS` (CSV) | libera origens no browser |
 | `ACCESS_LOG` (`false`) | log de acesso HTTP |
@@ -324,11 +326,18 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
       "headers": { "X-Extra": "1" } }
   ],
   "outbox": { "minIntervalMs": 4000, "jitterMs": 2000, "dailyLimit": 500 },
+  "media": { "store": true, "ttl": "168h" },  // store:false = não guarda; ttl "0" = nunca apaga
+  "cloud": { "phoneNumberId": "…", "accessToken": "…" }, // usa o motor Cloud API
   "rawEvents": false,   // inclui o struct cru do whatsmeow em payload.raw
   "autoRead": false,    // marca recebidas como lidas (recibo azul)
   "autoOnline": false   // mantém presença "available" após conectar
 }
 ```
+
+O coletor de mídia (`media.Sink.RunGC`, a cada `MEDIA_GC_INTERVAL`) apaga do
+S3 **e** do Postgres tudo com `expires_at < now()`. `expires_at` é gravado no
+insert a partir do `ttl` efetivo (sessão ou `MEDIA_TTL`). Apagar na mão:
+`DELETE /api/media/{id}` ou `POST /api/{s}/media/purge {olderThan?}`.
 
 `events` aceita wildcard: `message.*`, `*`. Cache de 10s no `Manager`
 (invalidado no `Upsert`).

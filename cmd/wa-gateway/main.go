@@ -132,10 +132,17 @@ func run() error {
 	}
 
 	// ---- sessoes ----
-	mgr := session.NewManager(st, rc, bus, log, cfg.DatabaseURL, cfg.NodeID, cfg.DefaultEngine,
-		media.NewSink(mediaStore, st))
+	mediaSink := media.NewSink(mediaStore, st)
+	mediaSink.SetLogger(log)
+	mgr := session.NewManager(st, rc, bus, log, cfg.DatabaseURL, cfg.NodeID, cfg.DefaultEngine, mediaSink)
 	mgr.SetEventStream(evStream)
 	mgr.SetSecretBox(secretBox)
+	mgr.SetMediaTTL(cfg.MediaTTL)
+	mediaSink.SetPolicy(mgr.MediaPolicy)
+	go mediaSink.RunGC(ctx, cfg.MediaGCInterval)
+	if mediaStore.Enabled() {
+		log.Info("armazenamento de midia: coletor ativo", "ttl_global", cfg.MediaTTL, "intervalo", cfg.MediaGCInterval)
+	}
 	if cfg.NodeAdvertiseURL != "" {
 		mgr.SetAdvertiseURL(cfg.NodeAdvertiseURL)
 		go mgr.ClusterHeartbeat(ctx)

@@ -266,7 +266,7 @@ func (e *Engine) handleEvent(raw any) {
 		}
 		// midia (com sink ligado) vai pro pool: o download nao pode bloquear
 		// este goroutine, senao atrasa as mensagens que vem atras.
-		if ev.Info.MediaType != "" && e.deps.Media != nil && e.deps.Media.Enabled() {
+		if ev.Info.MediaType != "" && e.deps.Media != nil && e.deps.Media.Enabled() && e.deps.Media.WantStore(e.deps.Session) {
 			e.mu.RLock()
 			jobs := e.mediaJobs
 			e.mu.RUnlock()
@@ -348,7 +348,7 @@ func (e *Engine) goOnline() {
 // anexando um campo "media" no payload. Roda inline (com timeout) e so
 // quando ha um MediaSink habilitado.
 func (e *Engine) attachMedia(p map[string]any, ev *waEvents.Message) {
-	if e.deps.Media == nil || !e.deps.Media.Enabled() || ev.Info.MediaType == "" || ev.Message == nil {
+	if e.deps.Media == nil || !e.deps.Media.Enabled() || !e.deps.Media.WantStore(e.deps.Session) || ev.Info.MediaType == "" || ev.Message == nil {
 		return
 	}
 	e.mu.RLock()

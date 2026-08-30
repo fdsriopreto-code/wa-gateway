@@ -84,6 +84,12 @@ Atualizado em **2026-08-30**.
   `GET/POST /api/{s}/labels`, `/labels/chat`, `/labels/message`. Cache de
   labels montado dos eventos `LabelEdit` (re-sync no reconnect). MCP:
   `list_labels`, `label_chat`. n8n: recurso "Etiqueta" (node v0.4.0).
+- **TTL / limpeza de mídia** — `MEDIA_TTL` global + `config.media.ttl` por
+  sessão (`5m`…`720h`, `0`=nunca); `config.media.store:false` descarta sem
+  subir pro S3. Coletor `media.Sink.RunGC` apaga vencidas do S3+DB a cada
+  `MEDIA_GC_INTERVAL`. Manual: `DELETE /api/media/{id}`,
+  `POST /api/{s}/media/purge`. Console: aba **Mídia** no cfgModal. Migração
+  0007 (`media.expires_at`).
 - CI completo + release automático do node n8n por tag.
 
 ---

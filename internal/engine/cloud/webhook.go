@@ -192,15 +192,18 @@ func (e *Engine) handleInbound(m *waInMessage, pushName string) {
 		if media.Caption != "" {
 			p["body"] = media.Caption
 		}
-		e.mu.RLock()
-		jobs := e.mediaJobs
-		e.mu.RUnlock()
-		select {
-		case jobs <- mediaJob{p: p, mediaID: media.ID, mime: media.MimeType, msgID: m.ID}:
-			return // worker faz o fetch + emit
-		default:
-			// pool cheio/parado: emite já, sem a mídia baixada (o mediaMeta
-			// permite baixar depois via /media/download).
+		// só baixa+guarda se a sessão não optou por descartar mídia.
+		if e.deps.Media != nil && e.deps.Media.Enabled() && e.deps.Media.WantStore(e.deps.Session) {
+			e.mu.RLock()
+			jobs := e.mediaJobs
+			e.mu.RUnlock()
+			select {
+			case jobs <- mediaJob{p: p, mediaID: media.ID, mime: media.MimeType, msgID: m.ID}:
+				return // worker faz o fetch + emit
+			default:
+				// pool cheio/parado: emite já; o mediaMeta permite baixar
+				// depois via /media/download.
+			}
 		}
 	}
 	e.emitMessage(p)

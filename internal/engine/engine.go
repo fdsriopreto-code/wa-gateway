@@ -294,7 +294,11 @@ type Engine interface {
 // Implementado quando MEDIA_BACKEND != none; pode ser nil.
 type MediaSink interface {
 	Enabled() bool
-	// Store guarda o binario e devolve a URL relativa de download.
+	// WantStore diz se a midia recebida desta sessao deve ser baixada e
+	// guardada (a sessao pode ter optado por descartar via config.media.store).
+	WantStore(session string) bool
+	// Store guarda o binario e devolve a URL relativa de download. url vazio
+	// (sem erro) = a sessao optou por nao guardar.
 	Store(ctx context.Context, session, msgID, mimetype string, data []byte) (url string, size int, err error)
 }
 

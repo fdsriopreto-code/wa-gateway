@@ -96,6 +96,8 @@ var specEndpoints = []ep{
 	{"GET", "/api/outbox", "Monitor", "Jobs da fila de saída", nil, []string{"session", "limit?"}},
 	{"GET", "/api/deliveries", "Monitor", "Entregas de webhook", nil, []string{"session", "limit?"}},
 	{"GET", "/api/media/{id}", "Monitor", "Baixar/stream de mídia guardada", nil, []string{"redirect?"}},
+	{"DELETE", "/api/media/{id}", "Monitor", "Apagar uma mídia do storage + registro", nil, nil},
+	{"POST", "/api/{session}/media/purge", "Monitor", "Apagar TODAS as mídias da sessão (ou só olderThan)", map[string]any{"olderThan": "168h"}, nil},
 	{"GET", "/api/stats", "Monitor", "Estatísticas", nil, nil},
 
 	{"GET", "/api/cluster", "Admin", "Info do nó e nós vivos (multi-nó)", nil, nil},

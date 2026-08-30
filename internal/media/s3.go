@@ -106,6 +106,11 @@ func (s *s3Store) Put(ctx context.Context, key, mimetype string, r io.Reader, si
 	return Object{Ref: key, Mimetype: mimetype, Size: info.Size}, nil
 }
 
+func (s *s3Store) Delete(ctx context.Context, ref string) error {
+	// RemoveObject e idempotente no MinIO/S3 (chave inexistente devolve nil).
+	return s.cli.RemoveObject(ctx, s.cfg.Bucket, ref, minio.RemoveObjectOptions{})
+}
+
 func (s *s3Store) Get(ctx context.Context, ref string) (io.ReadCloser, string, error) {
 	obj, err := s.cli.GetObject(ctx, s.cfg.Bucket, ref, minio.GetObjectOptions{})
 	if err != nil {

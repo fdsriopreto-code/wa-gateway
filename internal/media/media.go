@@ -25,6 +25,8 @@ type Store interface {
 	Enabled() bool
 	Put(ctx context.Context, key, mimetype string, r io.Reader, size int64) (Object, error)
 	Get(ctx context.Context, ref string) (io.ReadCloser, string, error)
+	// Delete remove o objeto. Idempotente: chave inexistente nao e erro.
+	Delete(ctx context.Context, ref string) error
 	// PresignedURL devolve uma URL temporaria de download direto, se o
 	// backend suportar; senao ErrDisabled.
 	PresignedURL(ctx context.Context, ref string, ttl time.Duration) (string, error)
@@ -40,6 +42,7 @@ func (Disabled) Put(context.Context, string, string, io.Reader, int64) (Object, 
 func (Disabled) Get(context.Context, string) (io.ReadCloser, string, error) {
 	return nil, "", ErrDisabled
 }
+func (Disabled) Delete(context.Context, string) error { return nil }
 func (Disabled) PresignedURL(context.Context, string, time.Duration) (string, error) {
 	return "", ErrDisabled
 }

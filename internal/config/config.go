@@ -38,7 +38,12 @@ type Config struct {
 	MessageStore bool
 
 	// Armazenamento de midia (opcional). MediaBackend: "none" (padrao) | "s3".
-	MediaBackend    string
+	MediaBackend string
+	// MediaTTL: apaga midia guardada depois desse tempo (0 = guarda pra
+	// sempre). Sobrescrevivel por sessao em config.media.ttl.
+	MediaTTL time.Duration
+	// MediaGCInterval: de quanto em quanto tempo o coletor varre as vencidas.
+	MediaGCInterval time.Duration
 	S3Endpoint      string
 	S3Region        string
 	S3Bucket        string
@@ -88,6 +93,8 @@ func Load() (Config, error) {
 		OutboxDailyLimit:   envInt("OUTBOX_DAILY_LIMIT", 0),
 		MessageStore:       env("MESSAGE_STORE", "on") != "off",
 		MediaBackend:       env("MEDIA_BACKEND", "none"),
+		MediaTTL:           envDuration("MEDIA_TTL", 0),
+		MediaGCInterval:    envDuration("MEDIA_GC_INTERVAL", 5*time.Minute),
 		S3Endpoint:         env("S3_ENDPOINT", ""),
 		S3Region:           env("S3_REGION", "us-east-1"),
 		S3Bucket:           env("S3_BUCKET", ""),

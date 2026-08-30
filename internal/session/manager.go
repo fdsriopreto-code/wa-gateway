@@ -15,6 +15,7 @@ import (
 	"wa-gateway/internal/cache"
 	"wa-gateway/internal/engine"
 	"wa-gateway/internal/events"
+	"wa-gateway/internal/media"
 	"wa-gateway/internal/observability"
 	"wa-gateway/internal/secret"
 	"wa-gateway/internal/store"
@@ -51,6 +52,7 @@ type Manager struct {
 
 	evStream  *events.Stream // log duravel; nil = só barramento in-process
 	secretBox *secret.Box    // cifra secrets de webhook em repouso; nil-safe
+	mediaTTL  time.Duration  // TTL global de midia (MEDIA_TTL); 0 = guarda pra sempre
 
 	mu      sync.RWMutex
 	running map[string]*handle
@@ -81,6 +83,29 @@ func (m *Manager) SetEventStream(s *events.Stream) { m.evStream = s }
 
 // SetSecretBox liga a cifra em repouso dos secrets de webhook.
 func (m *Manager) SetSecretBox(b *secret.Box) { m.secretBox = b }
+
+// SetMediaTTL define o TTL global de mídia (usado quando a sessão não
+// sobrescreve via config.media.ttl).
+func (m *Manager) SetMediaTTL(d time.Duration) { m.mediaTTL = d }
+
+// MediaPolicy resolve a política de mídia de uma sessão (opt-out + TTL).
+func (m *Manager) MediaPolicy(name string) media.Policy {
+	c := m.sessionConfig(name).Media
+	if c == nil {
+		return media.Policy{TTL: m.mediaTTL}
+	}
+	if c.Store != nil && !*c.Store {
+		return media.Policy{Disabled: true}
+	}
+	ttl := strings.TrimSpace(c.TTL)
+	if ttl == "0" {
+		return media.Policy{TTL: 0} // explícito: nunca apagar (ignora o global)
+	}
+	if d, err := time.ParseDuration(ttl); err == nil && d > 0 {
+		return media.Policy{TTL: d}
+	}
+	return media.Policy{TTL: m.mediaTTL} // "" ou inválido -> herda o global
+}
 
 func (m *Manager) openCfg(raw json.RawMessage) json.RawMessage {
 	if m.secretBox == nil {

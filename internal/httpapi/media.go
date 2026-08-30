@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"wa-gateway/internal/auth"
 	"wa-gateway/internal/store"
 )
 
@@ -58,4 +59,57 @@ func (d Deps) getMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	_, _ = io.Copy(w, body)
+}
+
+// DELETE /api/media/{id} — apaga uma mídia do storage e do registro.
+func (d Deps) deleteMedia(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	rec, err := d.Store.GetMedia(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "not_found", "midia nao encontrada")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if p, _ := auth.FromContext(r.Context()); !p.CanSession(rec.Session) {
+		writeErr(w, http.StatusForbidden, "forbidden_session", "sem acesso à sessão "+rec.Session)
+		return
+	}
+	if d.Media != nil {
+		_ = d.Media.Delete(r.Context(), rec.Ref)
+	}
+	_ = d.Store.DeleteMedia(r.Context(), []string{id})
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": id})
+}
+
+// POST /api/{session}/media/purge — apaga TODAS as mídias da sessão (ou só as
+// mais velhas que "olderThan", ex.: "168h").
+func (d Deps) purgeSessionMedia(w http.ResponseWriter, r *http.Request) {
+	session := chi.URLParam(r, "session")
+	var req struct {
+		OlderThan string `json:"olderThan"`
+	}
+	_ = decode(r, &req)
+	var older time.Duration
+	if req.OlderThan != "" {
+		older, _ = time.ParseDuration(req.OlderThan)
+	}
+	rows, err := d.Store.SessionMedia(r.Context(), session, older, 5000)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	done := make([]string, 0, len(rows))
+	for _, m := range rows {
+		if d.Media != nil {
+			if e := d.Media.Delete(r.Context(), m.Ref); e != nil {
+				continue
+			}
+		}
+		done = append(done, m.ID)
+	}
+	_ = d.Store.DeleteMedia(r.Context(), done)
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": len(done), "matched": len(rows)})
 }

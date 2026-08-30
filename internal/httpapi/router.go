@@ -121,6 +121,8 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 
 		// --- midia ---
 		r.Get("/api/media/{id}", d.getMedia)
+		r.Delete("/api/media/{id}", d.deleteMedia)
+		r.Post("/api/{session}/media/purge", d.purgeSessionMedia)
 
 		// --- historico (store de mensagens) ---
 		r.Get("/api/chats", d.listChats)

@@ -18,6 +18,20 @@ type Config struct {
 	// Cloud: credenciais da WhatsApp Cloud API. Preenchido = a sessao usa o
 	// motor "cloud" (oficial da Meta) em vez do whatsmeow.
 	Cloud *CloudConfig `json:"cloud,omitempty"`
+	// Media: politica de armazenamento de midia recebida desta sessao.
+	Media *MediaConfig `json:"media,omitempty"`
+}
+
+// MediaConfig controla o que fazer com a midia recebida (quando MEDIA_BACKEND
+// esta ligado).
+type MediaConfig struct {
+	// Store: guardar a midia no storage? nil/true = sim; false = descarta
+	// (nao sobe pro S3, o evento vem so com mediaMeta pra baixar sob demanda).
+	Store *bool `json:"store,omitempty"`
+	// TTL: apaga a midia automaticamente depois desse tempo ("5m", "24h",
+	// "720h"). Vazio/"0" = usa o padrao global (MEDIA_TTL) ou guarda pra
+	// sempre.
+	TTL string `json:"ttl,omitempty"`
 }
 
 // CloudConfig espelha engine.CloudConfig (o pacote session nao pode importar
