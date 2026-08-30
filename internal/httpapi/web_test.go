@@ -18,7 +18,7 @@ func TestSPAHandler(t *testing.T) {
 	}{
 		{"/", 200, "text/html", "<title>wa-gateway"},
 		{"/app.js", 200, "", "views.playground"},
-		{"/styles.css", 200, "text/css", "--accent"},
+		{"/styles.css", 200, "text/css", "--ac:"},
 		{"/rota/inexistente", 200, "text/html", "wa-gateway"}, // fallback SPA
 		{"/api/qualquer", 404, "application/json", "not_found"},
 	}

@@ -103,11 +103,16 @@ const apiData=async(m,p,b)=>(await api(m,p,b)).data;
 
 /* ═══════════════════════════════════════════════ ui bits */
 function toast(msg, kind="", title){
-  const t=h("div",{class:"toast "+kind},
-    ic(kind==="ok"?"check":kind==="err"?"alert":"circle","sm"),
-    h("div",{}, title?h("b",{},title):null, msg));
-  $("#toast-root").append(t);
-  setTimeout(()=>{t.style.opacity="0";t.style.transform="translateX(20px)";setTimeout(()=>t.remove(),200);},3800);
+  const root=$("#toast-root");
+  while(root.childElementCount>=4) root.firstChild.remove();
+  const t=h("div",{class:"toast "+kind,onclick:()=>dismiss()},
+    h("span",{class:"ic"},ic(kind==="ok"?"check":kind==="err"?"alert":"circle","sm")),
+    h("div",{}, title?h("b",{},title):null, msg),
+    h("span",{class:"bar"}));
+  root.append(t);
+  let done=false;
+  const dismiss=()=>{if(done)return;done=true;t.classList.add("out");setTimeout(()=>t.remove(),200);};
+  setTimeout(dismiss,4200);
 }
 const ok=(m)=>toast(m,"ok");
 const fail=(e)=>toast(typeof e==="string"?e:(e.message||"erro"),"err",typeof e==="object"&&e.status?"HTTP "+e.status:null);
@@ -152,11 +157,17 @@ function jsonOut(data, extra){
 const spinner=()=>h("span",{class:"spinner"});
 const loadingBox=()=>h("div",{class:"loading"},spinner());
 function skeleton(kind,n=4){
+  const cls=kind==="card"?"skel-card":kind==="kpi"?"skel-kpi":"skel-row";
+  if(kind==="kpi"){const g=h("div",{class:"kgrid"});for(let i=0;i<n;i++)g.append(h("div",{class:"skel "+cls}));return g;}
   const w=h("div",{});
-  for(let i=0;i<n;i++) w.append(h("div",{class:"skel "+(kind==="card"?"skel-card":"skel-row"),style:kind==="card"?"margin-bottom:12px":""}));
+  for(let i=0;i<n;i++) w.append(h("div",{class:"skel "+cls,style:kind==="card"?"margin-bottom:13px":""}));
   return w;
 }
-const empty=(iconName,txt,action)=>h("div",{class:"empty"}, ic(iconName,"lg"), h("div",{},txt), action||null);
+const empty=(iconName,txt,action,head)=>h("div",{class:"empty"},
+  h("div",{class:"eic"},ic(iconName,"lg")),
+  h("h4",{},head||txt),
+  head?h("p",{},txt):null,
+  action||null);
 const badge=(t)=>h("span",{class:"badge s-"+String(t||"?").toLowerCase()},h("span",{class:"dot"}),String(t||"?"));
 
 function table(cols,rows,emptyMsg){
@@ -169,9 +180,7 @@ function table(cols,rows,emptyMsg){
     })))))));
 }
 function kv(k,v){
-  return h("div",{style:"display:flex;gap:14px;padding:8px 0;font-size:12.5px;border-bottom:1px solid var(--border-2)"},
-    h("span",{style:"min-width:120px;color:var(--faint);font-weight:600"},k),
-    h("span",{},v&&v.nodeType?v:String(v)));
+  return h("div",{class:"kv"},h("span",{class:"k"},k),h("span",{},v&&v.nodeType?v:String(v)));
 }
 
 /* session cache */
@@ -377,7 +386,7 @@ function endpointCard(ep, openFirst){
     runBtn.disabled=true; clear(respBox); respBox.append(h("div",{class:"resp"},loadingBox()));
     try{
       const r=await api(ep.m,path,bodyObj);
-      renderResp(r.status,r.ms,r.data,ep.m,path,bodyObj); ok(`${ep.m} ${ep.path} → ${r.status}`);
+      renderResp(r.status,r.ms,r.data,ep.m,path,bodyObj); ok(`${ep.m} ${ep.path} → ${r.status}`); pushRecent(ep);
     }catch(e){ renderResp(e.status||0,e.ms||0,e.data??e.message,ep.m,path,bodyObj); fail(e); }
     finally{ runBtn.disabled=false; }
   }
@@ -407,45 +416,79 @@ const views={};
 
 views.overview={title:"Visão geral",async render(root){
   const page=h("div",{class:"page"}); root.append(page);
-  page.append(h("div",{class:"page-head"},h("div",{},h("h2",{},"Visão geral"),h("p",{},"Estado do gateway e das sessões."))));
-  const body=h("div",{}); page.append(body); body.append(skeleton("card",2));
+  page.append(h("div",{class:"page-head"},h("h2",{},"Visão geral"),h("p",{},"Estado do gateway, das sessões e atividade em tempo real.")));
+  const body=h("div",{}); page.append(body);
+  body.append(skeleton("kpi",5),h("div",{style:"height:20px"}),skeleton("card",1));
   let stats,sessions;
   try{[stats,sessions]=await Promise.all([apiData("GET","/api/stats"),loadSessions()]);}
-  catch(e){clear(body);body.append(empty("alert",e.message));return;}
+  catch(e){clear(body);body.append(empty("alert",e.message,null,"não deu pra carregar"));return;}
   clear(body);
   const by=(stats.sessions&&stats.sessions.byStatus)||{};
   const cards=[
-    ["sessions","Sessões",stats.sessions?stats.sessions.total:0,0],
-    ["wifi","Conectadas",by.WORKING||0,!by.WORKING],
-    ["qr","Aguardando QR",by.SCAN_QR_CODE||0,!by.SCAN_QR_CODE],
-    ["circle","Paradas",(by.STOPPED||0)+(by.LOGGED_OUT||0),1],
-    ["alert","Falhas",by.FAILED||0,!by.FAILED],
+    ["sessions","Sessões",stats.sessions?stats.sessions.total:0,true],
+    ["wifi","Conectadas",by.WORKING||0,!!by.WORKING],
+    ["qr","Aguardando QR",by.SCAN_QR_CODE||0,!!by.SCAN_QR_CODE],
+    ["circle","Paradas",(by.STOPPED||0)+(by.LOGGED_OUT||0),false],
+    ["alert","Falhas",by.FAILED||0,false],
   ];
-  body.append(
-    h("div",{class:"kgrid"},cards.map(([i,k,v,dim])=>
-      h("div",{class:"kpi"},h("div",{class:"k"},ic(i,"sm"),k),h("div",{class:"v"+(dim?" dim":"")},nfmt(v))))),
-    h("div",{class:"sec-title"},ic("sessions","sm"),"Sessões"),
-    (sessions&&sessions.length)?table([
-      {h:"nome",get:s=>h("b",{},s.name)},
-      {h:"status",get:s=>badge(s.status)},
-      {h:"jid",get:s=>h("span",{class:"mono muted"},s.jid||"—")},
-      {h:"",get:()=>h("a",{class:"btn ghost sm",href:"#/sessions"},"gerenciar")},
-    ],sessions):empty("sessions","nenhuma sessão ainda",h("a",{class:"btn sm",href:"#/sessions"},"Criar sessão")),
-    h("div",{class:"sec-title"},ic("settings","sm"),"Ambiente"),
+  body.append(h("div",{class:"kgrid"},cards.map(([i,k,v,on])=>
+    h("div",{class:"kpi"+(on&&v?" on":"")},
+      h("div",{class:"ir"},ic(i,"sm")),
+      h("div",{class:"k"},k),
+      h("div",{class:"v"+(v?"":" dim")},nfmt(v))))));
+
+  body.append(h("div",{class:"sec-title"},ic("sessions","sm"),"Sessões"));
+  if(sessions&&sessions.length){
+    const strip=h("div",{class:"sess-strip"});
+    sessions.forEach(s=>strip.append(h("a",{class:"schip",href:"#/sessions"},
+      h("span",{class:"ring "+String(s.status).toLowerCase()}),s.name,
+      h("span",{class:"faint",style:"font-weight:500"},s.jid?"· "+s.jid.split("@")[0].split(":")[0]:"· sem JID"))));
+    body.append(strip);
+  }else{
+    body.append(empty("sessions","Crie uma sessão pra parear um número de WhatsApp.",
+      h("a",{class:"btn sm",href:"#/sessions"},ic("plus","sm"),"Criar sessão"),"Nenhuma sessão ainda"));
+  }
+
+  // atividade ao vivo
+  body.append(h("div",{class:"sec-title"},ic("events","sm"),"Atividade ao vivo"));
+  const feed=h("div",{class:"mini-feed"},h("div",{class:"row"},h("span",{class:"faint"},"conectando ao stream…")));
+  body.append(h("div",{class:"card pad"},feed));
+  const anySess=(sessions||[])[0];
+  if(anySess){
+    let sock=null;
+    try{
+      sock=new WebSocket(`${LS.base.replace(/^http/,"ws")}/ws?session=*&events=*&api_key=${encodeURIComponent(LS.key)}`);
+      sock.onopen=()=>{clear(feed);feed.append(h("div",{class:"row"},h("span",{class:"faint"},"aguardando eventos…")));};
+      sock.onmessage=m=>{
+        let o;try{o=JSON.parse(m.data);}catch{return;}
+        if(feed.querySelector(".faint"))clear(feed);
+        const ev=o.event||"?",dom=ev.split(".")[0],p=o.payload||{};
+        const txt=p.body||(p.status?"status: "+p.status:"")||(p.code?"QR gerado":"")||JSON.stringify(p).slice(0,80);
+        feed.prepend(h("div",{class:"row"},
+          h("span",{class:"ev d-"+dom},ev),
+          h("span",{class:"txt"},(o.session?o.session+" · ":"")+txt),
+          h("span",{class:"ago"},new Date().toLocaleTimeString())));
+        while(feed.childElementCount>9)feed.lastChild.remove();
+      };
+    }catch{}
+    addEventListener("hashchange",()=>{try{sock&&sock.close();}catch{}},{once:true});
+  }else{clear(feed);feed.append(h("div",{class:"row"},h("span",{class:"faint"},"sem sessão pra escutar")));}
+
+  body.append(h("div",{class:"sec-title"},ic("settings","sm"),"Ambiente"),
     h("div",{class:"card pad"},
       kv("versão",stats.version||"?"),
       kv("commit",h("span",{class:"mono muted"},stats.commit||"dev")),
       kv("iniciado",fmtTime(stats.started)),
       kv("database",stats.database?badge("ok"):badge("failed")),
-      kv("base",h("span",{class:"mono muted"},LS.base))),
-  );
+      kv("base",h("span",{class:"mono muted"},LS.base))));
 }};
 
 views.sessions={title:"Sessões",async render(root){
   const page=h("div",{class:"page"}); root.append(page);
   page.append(h("div",{class:"page-head"},h("div",{},h("h2",{},"Sessões"),
     h("p",{},"Status atualiza sozinho. Sessões conectadas voltam automaticamente se o servidor reiniciar."))));
-  const grid=h("div",{class:"sess-grid"}); page.append(grid); grid.append(skeleton("card",2));
+  const grid=h("div",{class:"sess-grid"}); page.append(grid);
+  grid.append(h("div",{class:"skel skel-card"}),h("div",{class:"skel skel-card"}));
   const refs=new Map(); const pendingQR=new Set(); let poll=null;
   const label={SCAN_QR_CODE:"escaneie o QR",STARTING:"conectando…",WORKING:"conectado",FAILED:"falhou",STOPPED:"parada",LOGGED_OUT:"deslogada"};
 
@@ -458,16 +501,16 @@ views.sessions={title:"Sessões",async render(root){
       try{await apiData("POST",`/api/sessions/${s.name}/${fn}`);if(fn==="start"||fn==="restart")pendingQR.add(s.name);ok(`${s.name}: ${verb}`);await refresh();}
       catch(err){fail(err);}finally{b.disabled=false;}
     }},verb);
-    const card=h("div",{class:"card sess","data-name":s.name},
+    const card=h("div",{class:"card sess hover","data-name":s.name},
       h("div",{class:"top"},
         h("div",{},h("div",{class:"nm"},ic("sessions","sm"),s.name),
-          h("div",{class:"sub"},h("span",{},"engine: "+s.engine),h("span",{class:"mono jid"},s.jid||"sem JID"))),
+          h("div",{class:"sub"},"engine "+s.engine+"  ·  ",h("span",{class:"j jid"},s.jid||"sem JID"))),
         badgeSlot),
       qrSlot,
       h("div",{class:"acts"},
         act("start","start"),act("stop","stop"),act("restart","restart"),act("logout","logout",1),
         h("button",{class:"btn subtle sm",onclick:()=>cfgModal(s)},ic("settings","sm"),"Configurar"),
-        h("button",{class:"btn danger ghost sm",onclick:async()=>{
+        h("button",{class:"btn danger ghost sm",title:"apagar sessão",onclick:async()=>{
           if(!confirm(`apagar "${s.name}"?`))return;
           try{await apiData("DELETE",`/api/sessions/${s.name}`);ok("apagada");route();}catch(e){fail(e);}
         }},ic("trash","sm"))));
@@ -652,7 +695,7 @@ function webhookEditor(wh, onRemove){
     clear(chips);
     WILDCARDS.forEach(([w,lbl])=>{
       const on=sel.has(w);
-      chips.append(h("button",{class:"badge",style:`cursor:pointer;border:1px solid ${on?"var(--accent)":"var(--border)"};background:${on?"var(--accent-bg)":"transparent"};color:${on?"var(--accent)":"var(--muted)"}`,
+      chips.append(h("button",{class:"badge",style:`cursor:pointer;border:1px solid ${on?"var(--ac)":"var(--line)"};background:${on?"var(--ac-bg)":"transparent"};color:${on?"var(--ac)":"var(--fg-2)"}`,
         onclick:()=>{on?sel.delete(w):sel.add(w);renderChips();renderGrid();}},on?ic("check","sm"):null,w));
     });
   };
@@ -660,7 +703,7 @@ function webhookEditor(wh, onRemove){
     clear(grid);
     const wildAll=sel.has("*");
     EVENT_CATALOG.forEach(cat=>{
-      grid.append(h("div",{style:"grid-column:1/-1;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-top:8px"},cat.g));
+      grid.append(h("div",{style:"grid-column:1/-1;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-4);margin-top:8px"},cat.g));
       cat.items.forEach(([ev,desc])=>{
         const covered=wildAll||sel.has(ev)||(sel.has(ev.split(".")[0]+".*"));
         const cb=h("input",{type:"checkbox",checked:covered||undefined,disabled:(wildAll||sel.has(ev.split(".")[0]+".*"))||undefined,
@@ -744,48 +787,59 @@ views.chat={title:"Chat",async render(root){
 
     const bubbles=h("div",{class:"chat-body"});
     const status=h("span",{class:"pill"},h("span",{class:"dot"}),"conectando…");
-    const composer=h("input",{placeholder:"mensagem…",onkeydown:e=>{if(e.key==="Enter")sendMsg();}});
+    const composer=h("input",{placeholder:"mensagem…  (Enter envia)",onkeydown:e=>{if(e.key==="Enter")sendMsg();}});
     const sendBtn=h("button",{class:"btn icon",onclick:sendMsg},ic("send","sm"));
+    const who=cid.split("@")[0].split(":")[0];
     stage.append(h("div",{class:"chat-wrap"},
       h("div",{class:"chat-top"},
-        ic("chat","sm"),
-        h("div",{class:"who"},cid.split("@")[0],h("small",{},cid)),
+        h("div",{class:"av"},who.slice(-2)),
+        h("div",{class:"who"},who,h("small",{},cid)),
         h("div",{style:"margin-left:auto"},status)),
       bubbles,
       h("div",{class:"chat-input"},composer,sendBtn)));
-    bubbles.append(h("div",{class:"chat-empty"},"conectado — envie uma mensagem ou peça pra te mandarem uma"));
+    bubbles.append(h("div",{class:"chat-empty"},"carregando conversa…"));
 
-    const pending=new Map(); // messageId -> bubble el
-    const addBubble=(cls,text,metaText)=>{
-      const b=h("div",{class:"bubble "+cls},text,metaText?h("div",{class:"meta"},metaText):null);
+    const pending=new Map();
+    const mediaSrc=(id)=>`${LS.base}/api/messages/${encodeURIComponent(id)}/download?session=${encodeURIComponent(session)}&api_key=${encodeURIComponent(LS.key)}`;
+    const addBubble=(cls,{text,type,id,mediaUrl},metaText)=>{
       if(bubbles.querySelector(".chat-empty"))clear(bubbles);
+      const b=h("div",{class:"bubble "+cls});
+      const img=(type==="image"||type==="sticker");
+      if(img){
+        const src=mediaUrl||(id?mediaSrc(id):null);
+        if(src)b.append(h("img",{class:"media",src,alt:type,onclick:()=>window.open(src)}));
+      }
+      if(text)b.append(h("div",{},text));
+      else if(!img)b.append(h("div",{class:"faint"},"["+(type||"?")+"]"));
+      b.append(h("div",{class:"meta"},metaText||""));
       bubbles.append(b); bubbles.scrollTop=bubbles.scrollHeight; return b;
     };
+    const setTick=(b,t)=>{
+      const meta=b.querySelector(".meta"); clear(meta);
+      const cls=t==="read"?"tick read":"tick";
+      meta.append(fmtClock(Date.now())+" ",h("span",{class:cls},t==="delivered"||t==="read"?"✓✓":"✓"));
+    };
 
-    // histórico do store (se persistência estiver ligada)
     (async()=>{
       try{
         const hist=await apiData("GET",`/api/chats/${encodeURIComponent(cid)}/messages?session=${encodeURIComponent(session)}&limit=40`);
+        clear(bubbles);
         if(Array.isArray(hist)&&hist.length){
-          clear(bubbles);
-          hist.slice().reverse().forEach(m=>{
-            const body=m.body||`[${m.type}]`;
-            addBubble(m.fromMe?"out":"in",body,fmtClock(m.timestamp)+(m.pushName&&!m.fromMe?" · "+m.pushName:""));
-          });
-          bubbles.append(h("div",{class:"bubble sys"},"— fim do histórico · ao vivo abaixo —"));
-        }
-      }catch{}
+          hist.slice().reverse().forEach(m=>addBubble(m.fromMe?"out":"in",
+            {text:m.body,type:m.type,id:m.id},
+            fmtClock(m.timestamp)+(m.pushName&&!m.fromMe?" · "+m.pushName:"")));
+          bubbles.append(h("div",{class:"bubble sys"},"ao vivo abaixo"));
+        }else bubbles.append(h("div",{class:"chat-empty"},"sem histórico — envie ou receba uma mensagem"));
+      }catch{clear(bubbles);bubbles.append(h("div",{class:"chat-empty"},"conectado — envie uma mensagem"));}
     })();
 
     async function sendMsg(){
       const text=composer.value.trim(); if(!text)return;
       composer.value="";
-      const b=addBubble("out",text,"enviando…");
+      const b=addBubble("out",{text},"enviando…");
       try{
         const r=await apiData("POST","/api/sendText",{session,chatId:cid,text});
-        pending.set(r.messageId,b);
-        b.querySelector(".meta").textContent="";
-        b.querySelector(".meta").append(fmtClock(Date.now())+" ",h("span",{class:"tick"},"✓"));
+        pending.set(r.messageId,b); setTick(b,"sent");
       }catch(e){ b.querySelector(".meta").textContent="falhou: "+e.message; b.style.opacity=".6"; }
     }
 
@@ -798,16 +852,13 @@ views.chat={title:"Chat",async render(root){
       let o;try{o=JSON.parse(m.data);}catch{return;}
       const ev=o.event||o.name, p=o.payload||{};
       const sameChat=(p.chatId===cid)||(p.from===cid)||(p.chatLid===cid);
-      if(ev==="message"&&sameChat){
-        const body=p.body||(p.media?`[${p.type}] ${p.media.url||""}`:`[${p.type}]`);
-        addBubble("in",body,fmtClock(p.timestamp||Date.now())+(p.pushName?" · "+p.pushName:""));
+      if(!sameChat)return;
+      if(ev==="message"){
+        addBubble(p.fromMe?"out":"in",
+          {text:p.body,type:p.type,id:p.id,mediaUrl:p.media&&p.media.url?LS.base+p.media.url+"?api_key="+encodeURIComponent(LS.key):null},
+          fmtClock(p.timestamp||Date.now())+(p.pushName&&!p.fromMe?" · "+p.pushName:""));
       }else if(ev==="message.ack"&&Array.isArray(p.ids)){
-        p.ids.forEach(id=>{
-          const b=pending.get(id); if(!b)return;
-          const meta=b.querySelector(".meta"); clear(meta);
-          const tick=p.type==="read"?h("span",{class:"tick read"},"✓✓"):p.type==="delivered"?h("span",{class:"tick"},"✓✓"):h("span",{class:"tick"},"✓");
-          meta.append(fmtClock(Date.now())+" ",tick," ",p.type);
-        });
+        p.ids.forEach(id=>{const b=pending.get(id); if(b)setTick(b,p.type);});
       }
     };
   };
@@ -815,17 +866,35 @@ views.chat={title:"Chat",async render(root){
   if(saved.session&&saved.chatId){sess.value=saved.session;openBtn.click();}
 }};
 
+function recents(){try{return JSON.parse(sessionStorage.getItem("wa.recent")||"[]");}catch{return[];}}
+function pushRecent(ep){
+  const key=ep.m+" "+ep.path;
+  const l=recents().filter(x=>x.k!==key);
+  l.unshift({k:key,m:ep.m,path:ep.path,g:ep.g});
+  sessionStorage.setItem("wa.recent",JSON.stringify(l.slice(0,8)));
+}
 views.playground={title:"Playground",async render(root){
   await loadSessions();
   const page=h("div",{class:"page"}); root.append(page);
-  page.append(h("div",{class:"page-head"},h("div",{},h("h2",{},"Playground"),
-    h("p",{},"Todos os endpoints, prontos pra testar. A sessão escolhida fica lembrada."))));
-  const search=h("input",{placeholder:"filtrar endpoint…  (⌘K abre a busca global)",style:"margin-bottom:14px"});
+  page.append(h("div",{class:"page-head"},h("h2",{},"Playground"),
+    h("p",{},"Todos os endpoints, prontos pra testar. A sessão escolhida e as chamadas recentes ficam lembradas.")));
+  const search=h("input",{placeholder:"filtrar endpoint…  ( / foca aqui · ⌘K busca global )",style:"margin-bottom:12px"});
+  const rec=h("div",{class:"recent"});
   const nav=h("div",{class:"pg-nav"}); const list=h("div",{class:"pg-list"});
-  page.append(search,h("div",{class:"pg"},nav,list));
+  page.append(search,rec,h("div",{class:"pg"},nav,list));
   let active=sessionStorage.getItem("wa.pg")||GROUPS[0];
+  const open=(g,path)=>{active=g;sessionStorage.setItem("wa.pg",g);search.value="";draw();
+    requestAnimationFrame(()=>{const c=[...list.querySelectorAll(".ep")].find(x=>x.querySelector(".path").textContent===path);
+      if(c){c.classList.add("open");c.scrollIntoView({block:"center",behavior:"smooth"});}});};
+  const drawRecent=()=>{
+    clear(rec);
+    const r=recents(); if(!r.length)return;
+    rec.append(h("span",{class:"faint",style:"font-size:10.5px;align-self:center"},"recentes:"));
+    r.forEach(x=>rec.append(h("button",{class:"rc",onclick:()=>open(x.g,x.path)},
+      h("span",{class:"method "+x.m.toLowerCase(),style:"font-size:8.5px"},x.m),x.path.replace("/api/",""))));
+  };
   const draw=()=>{
-    clear(nav);clear(list);
+    clear(nav);clear(list); drawRecent();
     GROUPS.forEach(g=>{
       const cnt=ENDPOINTS.filter(e=>e.g===g).length;
       nav.append(h("button",{class:g===active?"active":"",onclick:()=>{active=g;sessionStorage.setItem("wa.pg",g);search.value="";draw();}},
@@ -833,7 +902,7 @@ views.playground={title:"Playground",async render(root){
     });
     const q=search.value.toLowerCase();
     const eps=ENDPOINTS.filter(e=>q?(e.path+e.title).toLowerCase().includes(q):e.g===active);
-    if(!eps.length){list.append(empty("search","nada encontrado"));return;}
+    if(!eps.length){list.append(empty("search","tente outro termo",null,"nada encontrado"));return;}
     eps.forEach((e,i)=>list.append(endpointCard(e,q&&i===0)));
   };
   search.addEventListener("input",draw);
@@ -977,8 +1046,8 @@ views.settings={title:"Conexão",async render(root){
     out));
   page.append(h("div",{class:"sec-title"},ic("link","sm"),"Endpoints de integração"),
     h("div",{class:"card pad"},
-      kv("OpenAPI",h("a",{class:"mono",style:"color:var(--accent)",href:LS.base+"/openapi.json",target:"_blank",rel:"noopener"},"/openapi.json")),
-      kv("Swagger UI",h("a",{class:"mono",style:"color:var(--accent)",href:LS.base+"/docs",target:"_blank",rel:"noopener"},"/docs")),
+      kv("OpenAPI",h("a",{class:"mono",style:"color:var(--ac)",href:LS.base+"/openapi.json",target:"_blank",rel:"noopener"},"/openapi.json")),
+      kv("Swagger UI",h("a",{class:"mono",style:"color:var(--ac)",href:LS.base+"/docs",target:"_blank",rel:"noopener"},"/docs")),
       kv("MCP (agentes IA)",h("span",{class:"mono muted"},"POST "+LS.base+"/mcp")),
       kv("WebSocket",h("span",{class:"mono muted"},"/ws?session=…&events=*&api_key=…"))));
 }};
@@ -1041,31 +1110,41 @@ const NAV=[
 ];
 function renderNav(active){
   const nav=$("#nav");clear(nav);
+  nav.append(h("div",{class:"conn-chip",id:"conn-chip"},h("span",{class:"lamp"}),
+    h("div",{},h("div",{class:"lbl"},"verificando…"),h("div",{class:"sub"},trunc(LS.base.replace(/^https?:\/\//,""),22)))));
   NAV.forEach(([grp,items])=>{
-    const g=h("div",{class:"nav-group"},h("div",{class:"lbl"},grp));
-    items.forEach(([id,icon,label])=>g.append(h("a",{href:"#/"+id,class:id===active?"active":"",onclick:()=>$("#sidebar").classList.remove("open")},
+    const g=h("div",{class:"nav-group"},h("div",{class:"glbl"},grp));
+    items.forEach(([id,icon,label])=>g.append(h("a",{href:"#/"+id,class:id===active?"active":"",onclick:()=>closeMenu()},
       ic(icon,"sm"),label)));
     nav.append(g);
   });
-  const docs=h("div",{class:"nav-group"},h("div",{class:"lbl"},"Referência"));
-  docs.append(h("a",{href:LS.base+"/docs",target:"_blank",rel:"noopener"},ic("link","sm"),"API docs (Swagger)"));
+  const docs=h("div",{class:"nav-group"},h("div",{class:"glbl"},"Referência"));
+  docs.append(h("a",{href:LS.base+"/docs",target:"_blank",rel:"noopener",onclick:()=>closeMenu()},ic("link","sm"),"API docs (Swagger)"));
   nav.append(docs);
+  paintConn();
 }
 function renderFoot(){
   const f=$("#foot");clear(f);
   f.append(
-    h("div",{class:"r"},h("b",{},"base"),h("span",{class:"v"},trunc(LS.base.replace(/^https?:\/\//,""),18))),
-    h("div",{class:"r"},h("b",{},"key"),h("span",{class:"v"},LS.key?trunc(LS.key,7)+"…":"—")),
-    h("button",{onclick:toggleTheme},ic(LS.theme==="dark"?"moon":"sun","sm"),LS.theme==="dark"?"Tema escuro":"Tema claro"),
+    h("div",{class:"r"},h("b",{},"key"),h("span",{class:"v"},LS.key?trunc(LS.key,8)+"…":"—")),
+    h("button",{class:"tbtn",onclick:toggleTheme},ic(LS.theme==="dark"?"sun":"moon","sm"),LS.theme==="dark"?"Tema claro":"Tema escuro"),
   );
 }
 function applyTheme(){document.documentElement.setAttribute("data-theme",LS.theme);}
-function toggleTheme(){LS.theme=LS.theme==="dark"?"light":"dark";applyTheme();renderFoot();}
+function toggleTheme(){LS.theme=LS.theme==="dark"?"light":"dark";applyTheme();renderFoot();route();}
+function closeMenu(){$("#sidebar").classList.remove("open");$("#scrim")?.classList.remove("on");}
 
+let _healthy=null;
+function paintConn(){
+  const c=$("#conn-chip");if(!c)return;
+  c.className="conn-chip"+(_healthy===true?" ok":_healthy===false?" bad":"");
+  c.querySelector(".lbl").textContent=_healthy===true?"online":_healthy===false?"offline":"verificando…";
+}
 async function health(){
   const p=$("#health");
-  try{const hh=await apiData("GET","/health");p.className="pill "+(hh.status==="ok"?"ok":"bad");p.lastChild.textContent=hh.status==="ok"?"online":hh.status;}
-  catch{p.className="pill bad";p.lastChild.textContent="offline";}
+  try{const hh=await apiData("GET","/health");_healthy=hh.status==="ok";p.className="pill "+(_healthy?"ok":"bad");p.lastChild.textContent=_healthy?"online":hh.status;}
+  catch{_healthy=false;p.className="pill bad";p.lastChild.textContent="offline";}
+  paintConn();
 }
 
 async function route(){
@@ -1098,7 +1177,11 @@ function onboard(){
 }
 
 $("#refresh").addEventListener("click",route);
-$("#menu-btn").addEventListener("click",()=>$("#sidebar").classList.toggle("open"));
+$("#menu-btn").addEventListener("click",()=>{
+  const open=$("#sidebar").classList.toggle("open");
+  $("#scrim").classList.toggle("on",open);
+});
+$("#scrim").addEventListener("click",closeMenu);
 addEventListener("hashchange",route);
 addEventListener("keydown",e=>{
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();openPalette();return;}
