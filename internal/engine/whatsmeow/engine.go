@@ -277,6 +277,9 @@ func (e *Engine) handleEvent(raw any) {
 			default: // pool cheio (ou parado) -> cai no caminho inline
 			}
 		}
+		if ev.Message.GetPollCreationMessage() != nil {
+			go e.savePollOptionsFromEvent(ev) // enquete criada à mão também entra no store
+		}
 		if ev.Message.GetPollUpdateMessage() != nil {
 			go e.emitPollVote(ev) // decifra + emite message.poll_vote em paralelo
 		}

@@ -10,6 +10,30 @@ import (
 	"wa-gateway/internal/events"
 )
 
+// savePollOptionsFromEvent guarda as opcoes de uma CRIACAO de enquete que
+// passou pelo evento (type "poll") — cobre enquetes feitas A MAO no WhatsApp
+// por qualquer participante, nao so as criadas via POST /api/sendPoll.
+// Idempotente: a mesma enquete criada pela API volta aqui como fromMe e
+// re-grava a mesma coisa (so refresca o TTL).
+func (e *Engine) savePollOptionsFromEvent(ev *waEvents.Message) {
+	pc := ev.Message.GetPollCreationMessage()
+	if pc == nil || e.deps.PollStore == nil {
+		return
+	}
+	opts := make([]string, 0, len(pc.GetOptions()))
+	for _, o := range pc.GetOptions() {
+		if n := o.GetOptionName(); n != "" {
+			opts = append(opts, n)
+		}
+	}
+	if len(opts) < 2 {
+		return
+	}
+	if err := e.deps.PollStore.SavePollOptions(context.Background(), e.deps.Session, ev.Info.ID, opts); err != nil {
+		e.deps.Logger.Warn("pollstore: opcoes de enquete recebida", "poll", ev.Info.ID, "err", err)
+	}
+}
+
 // emitPollVote decifra um voto de enquete e publica "message.poll_vote".
 // Roda fora do caminho critico (a decriptacao toca a tabela de secrets).
 //
