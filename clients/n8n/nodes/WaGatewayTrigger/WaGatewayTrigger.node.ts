@@ -10,8 +10,11 @@ import type {
 import { createHmac, timingSafeEqual } from 'crypto';
 
 /** Saídas do node — uma por tipo de mensagem. Ordem = índice do output. */
-const OUTPUTS = ['Texto', 'Imagem', 'Áudio', 'Vídeo', 'Documento', 'Outros', 'Eventos'] as const;
+const OUTPUTS = ['Texto', 'Imagem', 'Áudio', 'Vídeo', 'Documento', 'Outros', 'Eventos', 'Enquete'] as const;
 const IDX: Record<string, number> = { text: 0, image: 1, audio: 2, video: 3, document: 4 };
+const OUT_OTHER = 5;
+const OUT_EVENT = 6;
+const OUT_POLL = 7;
 
 /**
  * Trigger do wa-gateway: recebe eventos de uma sessão e **roteia por tipo**.
@@ -27,10 +30,10 @@ export class WaGatewayTrigger implements INodeType {
 		group: ['trigger'],
 		version: 2,
 		subtitle: '={{$parameter["session"] + " · " + ($parameter["events"] || "*")}}',
-		description: 'Recebe eventos do wa-gateway roteando por tipo (texto, imagem, áudio, vídeo, documento…)',
+		description: 'Recebe eventos do wa-gateway roteando por tipo (texto, imagem, áudio, vídeo, documento, enquete/voto…)',
 		defaults: { name: 'wa-gateway Trigger' },
 		inputs: [],
-		outputs: ['main', 'main', 'main', 'main', 'main', 'main', 'main'],
+		outputs: ['main', 'main', 'main', 'main', 'main', 'main', 'main', 'main'],
 		outputNames: [...OUTPUTS],
 		credentials: [{ name: 'waGatewayApi', required: true }],
 		webhooks: [
@@ -50,9 +53,9 @@ export class WaGatewayTrigger implements INodeType {
 			},
 			{
 				displayName: 'Eventos', name: 'events', type: 'string', default: 'message',
-				placeholder: 'message  ·  message,session.status,group.update  ·  *',
+				placeholder: 'message  ·  message,message.poll_vote,group.update  ·  *',
 				description:
-					'O que o gateway envia. "message" = só mensagens recebidas. Eventos que não são mensagem saem na saída "Eventos".',
+					'O que o gateway envia (CSV). "message" = só mensagens recebidas; "message.poll_vote" = votos de enquete já decifrados; "*" = tudo. Eventos que não são mensagem saem em "Eventos"; votos e criação de enquete saem em "Enquete".',
 			},
 			{
 				displayName: 'Baixar mídia (anexar como binário)', name: 'downloadMedia', type: 'boolean', default: true,
@@ -135,9 +138,26 @@ export class WaGatewayTrigger implements INodeType {
 		const payload = (body.payload || {}) as IDataObject;
 		const isMsg = ev === 'message' || ev === 'message.any';
 		const type = String(payload.type || '');
-		const outIdx = isMsg ? (IDX[type] ?? 5 /* Outros */) : 6 /* Eventos */;
 
 		const item: INodeExecutionData = { json: body };
+		let outIdx: number;
+
+		if (ev === 'message.poll_vote') {
+			// voto de enquete já decifrado: entrega o payload ACHATADO
+			// (pollId, chatId, voter, voterName, selectedOptions, removed, timestamp)
+			// pronto pra usar, na saída "Enquete".
+			outIdx = OUT_POLL;
+			item.json = { event: ev, session: body.session, ...payload };
+		} else if (isMsg && type === 'poll') {
+			// criação de enquete → também sai em "Enquete" (payload cru: id = pollId,
+			// body = a pergunta). Ignora o poll_vote cru (esse vai por message.poll_vote).
+			outIdx = OUT_POLL;
+		} else if (isMsg && type === 'poll_vote') {
+			// voto cru (sem opção resolvida) — some se você assina message.poll_vote.
+			outIdx = OUT_OTHER;
+		} else {
+			outIdx = isMsg ? (IDX[type] ?? OUT_OTHER) : OUT_EVENT;
+		}
 
 		// baixa a mídia e anexa como binário (usa mediaMeta do evento —
 		// não depende do store de mensagens)

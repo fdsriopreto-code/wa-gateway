@@ -55,6 +55,8 @@ const OPS: Op[] = [
 		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), latitude: c.get('latitude'), longitude: c.get('longitude'), name: c.get('name', ''), ...queue(c) }) },
 	{ resource: 'message', operation: 'sendPoll', method: 'POST', path: () => '/api/sendPoll',
 		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), name: c.get('pollName'), options: String(c.get('pollOptions')).split('\n').map((x) => x.trim()).filter(Boolean), selectable: c.get('selectable', 1), ...queue(c) }) },
+	{ resource: 'message', operation: 'pollResult', method: 'GET',
+		path: (c) => `/api/${S(c)}/polls/${encodeURIComponent(c.get('pollMessageId') as string)}` },
 	{ resource: 'message', operation: 'buttons', method: 'POST', path: () => '/api/sendInteractive',
 		body: (c) => ({
 			session: c.get('session'), chatId: c.get('chatId'), type: 'button',
@@ -138,7 +140,8 @@ export class WaGateway implements INodeType {
 			opt('message', [
 				['Enviar texto', 'sendText'], ['Enviar imagem', 'sendImage'], ['Enviar documento', 'sendFile'],
 				['Enviar vídeo', 'sendVideo'], ['Enviar áudio', 'sendAudio'], ['Enviar localização', 'sendLocation'],
-				['Enviar enquete', 'sendPoll'], ['Enviar botões (Cloud API)', 'buttons'], ['Enviar template (Cloud API)', 'template'],
+				['Enviar enquete', 'sendPoll'], ['Resultado da enquete', 'pollResult'],
+				['Enviar botões (Cloud API)', 'buttons'], ['Enviar template (Cloud API)', 'template'],
 				['Reagir', 'react'], ['Encaminhar', 'forward'],
 			], 'sendText'),
 			opt('session', [
@@ -201,6 +204,8 @@ export class WaGateway implements INodeType {
 			str('pollName', 'Pergunta', { required: true, show: { resource: ['message'], operation: ['sendPoll'] } }),
 			str('pollOptions', 'Opções (uma por linha)', { typeOptions: { rows: 3 }, required: true, show: { resource: ['message'], operation: ['sendPoll'] } }),
 			num('selectable', 'Opções selecionáveis', { default: 1, show: { resource: ['message'], operation: ['sendPoll'] } }),
+			str('pollMessageId', 'Message ID da enquete', { required: true, placeholder: '3EB0C2B74C2E330AEC2943',
+				show: { resource: ['message'], operation: ['pollResult'] } }),
 
 			// react / forward
 			str('messageId', 'Message ID', { required: true, show: { resource: ['message'], operation: ['react', 'forward'] } }),
