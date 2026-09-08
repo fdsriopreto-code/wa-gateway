@@ -104,6 +104,7 @@ var specEndpoints = []ep{
 	{"GET", "/api/{session}/leads", "Leads", "Lista os leads (contatos) com métricas de conversa e origem", nil, []string{"status?", "stage?", "tag?", "q?", "source?", "sort?", "limit?", "offset?"}},
 	{"GET", "/api/{session}/leads/stats", "Leads", "Funil: contagem por status/etapa, tempo médio de resposta, leads de anúncio/UTM", nil, nil},
 	{"GET", "/api/{session}/leads/{chatId}", "Leads", "Detalhe de um lead (chatId ou só o número)", nil, nil},
+	{"GET", "/api/{session}/polls/{messageId}", "Messaging", "Placar de uma enquete criada por esta sessão (opções + quem votou). Cache Redis ~30d. Votos em tempo real chegam pelo evento message.poll_vote.", nil, nil},
 	{"PATCH", "/api/{session}/leads/{chatId}", "Leads", "Atualiza campos de CRM do lead", map[string]any{"stage": "qualificado", "owner": "ana", "tags": []string{"quente"}, "notes": "pediu proposta", "status": "closed"}, nil},
 
 	// ---- OTP (código de verificação)

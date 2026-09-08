@@ -18,6 +18,7 @@ import (
 	"wa-gateway/internal/events"
 	"wa-gateway/internal/media"
 	"wa-gateway/internal/observability"
+	"wa-gateway/internal/pollstore"
 	"wa-gateway/internal/secret"
 	"wa-gateway/internal/store"
 )
@@ -393,6 +394,7 @@ func (m *Manager) start(ctx context.Context, name string, recovering bool) error
 		RawEvents:  func() bool { return m.sessionWantsRaw(name) },
 		Behavior:   func() engine.AutoBehavior { return m.sessionBehavior(name) },
 		Enrich:     enrichFn,
+		PollStore:  pollstore.New(m.cache),
 		StoredJID:  rec.JID,
 		Recovering: recovering,
 	})

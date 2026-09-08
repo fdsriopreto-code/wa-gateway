@@ -227,7 +227,14 @@ func (e *Engine) SendPoll(ctx context.Context, chatID, name string, options []st
 	if ci := ctxInfo(opts); ci != nil && msg.PollCreationMessage != nil {
 		msg.PollCreationMessage.ContextInfo = ci
 	}
-	return e.send(ctx, chatID, msg)
+	res, err := e.send(ctx, chatID, msg)
+	if err == nil && res.MessageID != "" && e.deps.PollStore != nil {
+		// guarda as opcoes EXATAS (com emoji, sem trim) pra resolver os votos.
+		if serr := e.deps.PollStore.SavePollOptions(ctx, e.deps.Session, res.MessageID, options); serr != nil {
+			e.deps.Logger.Warn("pollstore: salvar opcoes da enquete", "poll", res.MessageID, "err", serr)
+		}
+	}
+	return res, err
 }
 
 type reqErr struct{ s string }

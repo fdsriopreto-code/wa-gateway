@@ -93,6 +93,8 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 		r.Patch("/api/{session}/leads/{chatId}", d.patchLead)
 		r.Post("/api/{session}/leads/{chatId}", d.patchLead)
 
+		r.Get("/api/{session}/polls/{messageId}", d.getPollResult)
+
 		// --- OTP (código de verificação) ---
 		r.Post("/api/{session}/otp/send", d.otpSend)
 		r.Post("/api/{session}/otp/verify", d.otpVerify)

@@ -34,6 +34,7 @@ const (
 	MessageReaction = "message.reaction"
 	MessageRevoked  = "message.revoked"
 	MessageEdited   = "message.edited"
+	MessagePollVote = "message.poll_vote" // voto de enquete decifrado — payload: {pollId, chatId, voter, voterName, selectedOptions, removed, timestamp}
 
 	Presence     = "presence.update"
 	ChatPresence = "chat.presence" // typing/recording

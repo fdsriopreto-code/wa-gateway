@@ -302,6 +302,18 @@ type MediaSink interface {
 	Store(ctx context.Context, session, msgID, mimetype string, data []byte) (url string, size int, err error)
 }
 
+// PollStore persiste opcoes e o placar corrente dos votos de uma enquete,
+// pra resolver o texto votado no evento message.poll_vote.
+type PollStore interface {
+	// SavePollOptions grava as opcoes EXATAS (ordem preservada, sem normalizar).
+	SavePollOptions(ctx context.Context, session, pollID string, options []string) error
+	// PollOptions devolve as opcoes guardadas (nil, nil se nao achou).
+	PollOptions(ctx context.Context, session, pollID string) ([]string, error)
+	// RecordVote atualiza o placar: voter -> opcoes selecionadas agora
+	// (selected vazio = removeu o voto).
+	RecordVote(ctx context.Context, session, pollID, voter string, selected []string) error
+}
+
 // AutoBehavior sao comportamentos automaticos que a sessao pode ligar.
 type AutoBehavior struct {
 	// AutoRead marca como lida toda mensagem recebida (envia recibo azul).
@@ -344,6 +356,10 @@ type Deps struct {
 	// devolve campos extras pro payload (transcript / imageCaption). Recebe
 	// os bytes ja baixados. nil = desligado.
 	Enrich func(ctx context.Context, mediaType, mime string, data []byte) map[string]any
+	// PollStore guarda as opcoes de uma enquete (por messageId) e o placar
+	// corrente dos votos, pra decifrar/agregar votos de enquete depois.
+	// nil = feature desligada (poll_vote sai sem opcao resolvida).
+	PollStore PollStore
 	// StoredJID e o JID que esta sessao ja pareou (coluna sessions.jid),
 	// vazio para sessao nova. A engine usa para carregar o device certo
 	// quando varias sessoes compartilham o mesmo store.

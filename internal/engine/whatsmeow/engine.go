@@ -277,6 +277,9 @@ func (e *Engine) handleEvent(raw any) {
 			default: // pool cheio (ou parado) -> cai no caminho inline
 			}
 		}
+		if ev.Message.GetPollUpdateMessage() != nil {
+			go e.emitPollVote(ev) // decifra + emite message.poll_vote em paralelo
+		}
 		p := normalizeMessage(ev, e.wantRaw())
 		e.attachMedia(p, ev)
 		e.emitMessage(p, ev.Info.IsFromMe)
