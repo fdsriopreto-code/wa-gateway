@@ -3,11 +3,56 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"path"
+	"strings"
+	"time"
 
 	"wa-gateway/internal/engine"
 	"wa-gateway/internal/outbox"
 )
+
+// maxMediaBytes é o teto de download de mídia por URL (mesmo do envio direto).
+const maxMediaBytes = 64 << 20
+
+var mediaHTTP = &http.Client{Timeout: 30 * time.Second}
+
+// fetchMediaURL baixa uma mídia de uma URL http(s) e devolve os bytes, o
+// mimetype (do header Content-Type) e um nome de arquivo derivado do path.
+func fetchMediaURL(ctx context.Context, raw string) (data []byte, mime, filename string, err error) {
+	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+		return nil, "", "", fmt.Errorf("url precisa ser http(s)")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return nil, "", "", err
+	}
+	resp, err := mediaHTTP.Do(req)
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", "", fmt.Errorf("url respondeu %d", resp.StatusCode)
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxMediaBytes+1))
+	if err != nil {
+		return nil, "", "", err
+	}
+	if len(b) > maxMediaBytes {
+		return nil, "", "", fmt.Errorf("mídia maior que %d MB", maxMediaBytes>>20)
+	}
+	if len(b) == 0 {
+		return nil, "", "", fmt.Errorf("url não devolveu conteúdo")
+	}
+	mime = strings.TrimSpace(strings.SplitN(resp.Header.Get("Content-Type"), ";", 2)[0])
+	if name := path.Base(req.URL.Path); name != "" && name != "/" && name != "." {
+		filename = name
+	}
+	return b, mime, filename, nil
+}
 
 // sendInteractive: botões/lista/CTA. Só funciona em sessão engine=cloud;
 // no whatsmeow devolve 501 not_supported.
@@ -145,33 +190,53 @@ type mediaReq struct {
 	Mimetype string `json:"mimetype"`
 	Filename string `json:"filename"`
 	Data     string `json:"data"` // base64 (aceita data URI)
+	URL      string `json:"url"`  // alternativa a data: o gateway baixa esta URL http(s)
 	Seconds  uint32 `json:"seconds"`
 	GIF      bool   `json:"gif"`
 	Voice    bool   `json:"voice"`
 }
 
 // mediaFor valida a request comum de midia e devolve os dados normalizados.
+// Aceita `data` (base64/data URI) OU `url` (http(s) que o gateway baixa).
 func (d Deps) mediaFor(w http.ResponseWriter, r *http.Request) (mediaReq, engine.Media, bool) {
 	var req mediaReq
 	if err := decode(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return req, engine.Media{}, false
 	}
-	if req.ChatID == "" || req.Data == "" {
-		writeErr(w, http.StatusBadRequest, "bad_request", "chatId e data sao obrigatorios")
+	if req.ChatID == "" || (req.Data == "" && req.URL == "") {
+		writeErr(w, http.StatusBadRequest, "bad_request", "chatId e (data OU url) sao obrigatorios")
 		return req, engine.Media{}, false
 	}
-	data, detected, err := decodeB64(req.Data)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_request", "data nao e base64 valido")
-		return req, engine.Media{}, false
-	}
-	mime := req.Mimetype
-	if mime == "" {
+
+	var data []byte
+	var mime, filename string
+	if req.Data != "" {
+		var detected string
+		var err error
+		data, detected, err = decodeB64(req.Data)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "data nao e base64 valido")
+			return req, engine.Media{}, false
+		}
 		mime = detected
+	} else {
+		var err error
+		data, mime, filename, err = fetchMediaURL(r.Context(), req.URL)
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, "url_fetch_failed", "nao consegui baixar a url: "+err.Error())
+			return req, engine.Media{}, false
+		}
+	}
+
+	if req.Mimetype != "" {
+		mime = req.Mimetype
+	}
+	if req.Filename != "" {
+		filename = req.Filename
 	}
 	return req, engine.Media{
-		Data: data, Mimetype: mime, Filename: req.Filename, Caption: req.Caption,
+		Data: data, Mimetype: mime, Filename: filename, Caption: req.Caption,
 		Seconds: req.Seconds, GIF: req.GIF, Voice: req.Voice, Opts: req.opts(),
 	}, true
 }

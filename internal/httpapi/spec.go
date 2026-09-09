@@ -42,10 +42,10 @@ var specEndpoints = []ep{
 
 	// ---- envio
 	{"POST", "/api/sendText", "Messaging", "Enviar texto. callbackUrl (opcional): POST quando a msg for entregue/lida/falhar.", map[string]any{"session": "default", "chatId": "5517999999999@s.whatsapp.net", "text": "olá", "linkPreview": false, "enqueue": false, "callbackUrl": "", "callbackData": map[string]any{}}, nil},
-	{"POST", "/api/sendImage", "Messaging", "Enviar imagem", map[string]any{"session": "default", "chatId": "…@s.whatsapp.net", "data": "<base64>", "caption": "", "mimetype": ""}, nil},
-	{"POST", "/api/sendFile", "Messaging", "Enviar documento", map[string]any{"session": "default", "chatId": "…", "data": "<base64>", "filename": "doc.pdf", "mimetype": ""}, nil},
-	{"POST", "/api/sendVideo", "Messaging", "Enviar vídeo", map[string]any{"session": "default", "chatId": "…", "data": "<base64>", "caption": ""}, nil},
-	{"POST", "/api/sendAudio", "Messaging", "Enviar áudio", map[string]any{"session": "default", "chatId": "…", "data": "<base64>", "voice": true}, nil},
+	{"POST", "/api/sendImage", "Messaging", "Enviar imagem. `data` (base64/data URI) OU `url` (o gateway baixa)", map[string]any{"session": "default", "chatId": "…@s.whatsapp.net", "url": "https://…/foto.jpg", "caption": "", "mimetype": ""}, nil},
+	{"POST", "/api/sendFile", "Messaging", "Enviar documento. `data` OU `url`", map[string]any{"session": "default", "chatId": "…", "url": "https://…/doc.pdf", "filename": "doc.pdf", "mimetype": ""}, nil},
+	{"POST", "/api/sendVideo", "Messaging", "Enviar vídeo. `data` OU `url`", map[string]any{"session": "default", "chatId": "…", "url": "https://…/video.mp4", "caption": ""}, nil},
+	{"POST", "/api/sendAudio", "Messaging", "Enviar áudio. `data` OU `url`", map[string]any{"session": "default", "chatId": "…", "url": "https://…/audio.ogg", "voice": true}, nil},
 	{"POST", "/api/sendSticker", "Messaging", "Enviar sticker (webp)", map[string]any{"session": "default", "chatId": "…", "data": "<base64 webp>"}, nil},
 	{"POST", "/api/sendLocation", "Messaging", "Enviar localização", map[string]any{"session": "default", "chatId": "…", "latitude": -20.8, "longitude": -49.4, "name": ""}, nil},
 	{"POST", "/api/sendContact", "Messaging", "Enviar contato", map[string]any{"session": "default", "chatId": "…", "contacts": []any{map[string]any{"name": "Fulano", "phone": "+5517…"}}}, nil},
