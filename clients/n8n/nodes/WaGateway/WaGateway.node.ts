@@ -12,15 +12,14 @@ type Op = { resource: string; operation: string; method: IHttpRequestMethods; pa
 type Ctx = { fn: IExecuteFunctions; i: number; get: (n: string, d?: unknown) => any };
 
 /** helpers ------------------------------------------------------------------ */
-async function mediaToBase64(c: Ctx): Promise<{ data: string; mimetype?: string; filename?: string }> {
+async function mediaBody(c: Ctx): Promise<{ data?: string; url?: string; mimetype?: string; filename?: string }> {
 	const source = c.get('mediaSource', 'binary') as string;
 	if (source === 'base64') {
 		return { data: c.get('data') as string, mimetype: (c.get('mimetype') as string) || undefined, filename: (c.get('filename') as string) || undefined };
 	}
 	if (source === 'url') {
-		const url = c.get('url') as string;
-		const buf = (await c.fn.helpers.httpRequest({ method: 'GET', url, encoding: 'arraybuffer' })) as Buffer;
-		return { data: Buffer.from(buf).toString('base64'), mimetype: undefined, filename: (c.get('filename') as string) || undefined };
+		// deixa o gateway baixar a URL (menos transferência, sem base64 no meio)
+		return { url: c.get('url') as string, filename: (c.get('filename') as string) || undefined };
 	}
 	// binary (default)
 	const prop = (c.get('binaryProperty', 'data') as string) || 'data';
@@ -269,11 +268,12 @@ export class WaGateway implements INodeType {
 
 				const mediaOp = ['sendImage', 'sendFile', 'sendVideo', 'sendAudio'];
 				if (resource === 'message' && mediaOp.includes(operation)) {
-					const m = await mediaToBase64(c);
+					const m = await mediaBody(c);
 					path = '/api/' + operation;
 					body = {
 						session: c.get('session'), chatId: c.get('chatId'),
-						data: m.data, mimetype: m.mimetype, filename: c.get('filename', m.filename) || m.filename,
+						data: m.data, url: m.url, mimetype: m.mimetype,
+						filename: c.get('filename', m.filename) || m.filename,
 						caption: c.get('caption', '') || undefined,
 						voice: operation === 'sendAudio' ? c.get('voice', false) : undefined,
 						...queue(c),
