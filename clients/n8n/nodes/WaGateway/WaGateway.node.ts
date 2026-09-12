@@ -49,11 +49,11 @@ const OPS: Op[] = [
 
 	// ---- Message
 	{ resource: 'message', operation: 'sendText', method: 'POST', path: () => '/api/sendText',
-		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), text: c.get('text'), linkPreview: c.get('linkPreview', false), ...queue(c) }) },
+		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), text: c.get('text'), linkPreview: c.get('linkPreview', false), mentions: mentionsOf(c), ...queue(c) }) },
 	{ resource: 'message', operation: 'sendLocation', method: 'POST', path: () => '/api/sendLocation',
 		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), latitude: c.get('latitude'), longitude: c.get('longitude'), name: c.get('name', ''), ...queue(c) }) },
 	{ resource: 'message', operation: 'sendPoll', method: 'POST', path: () => '/api/sendPoll',
-		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), name: c.get('pollName'), options: String(c.get('pollOptions')).split('\n').map((x) => x.trim()).filter(Boolean), selectable: c.get('selectable', 1), ...queue(c) }) },
+		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), name: c.get('pollName'), options: String(c.get('pollOptions')).split('\n').map((x) => x.trim()).filter(Boolean), selectable: c.get('selectable', 1), mentions: mentionsOf(c), ...queue(c) }) },
 	{ resource: 'message', operation: 'pollResult', method: 'GET',
 		path: (c) => `/api/${S(c)}/polls/${encodeURIComponent(c.get('pollMessageId') as string)}` },
 	{ resource: 'message', operation: 'buttons', method: 'POST', path: () => '/api/sendInteractive',
@@ -107,6 +107,11 @@ const OPS: Op[] = [
 ];
 const queue = (c: Ctx): IDataObject => (c.get('enqueue', false) ? { enqueue: true, delay: c.get('delay', '') || undefined } : {});
 const lines = (c: Ctx, n: string) => String(c.get(n, '')).split('\n').map((x) => x.trim()).filter(Boolean);
+/** aceita um número/JID por linha OU separado por vírgula. */
+const mentionsOf = (c: Ctx): string[] | undefined => {
+	const list = String(c.get('mentions', '') || '').split(/[\n,]+/).map((x) => x.trim()).filter(Boolean);
+	return list.length ? list : undefined;
+};
 
 /** node ------------------------------------------------------------------- */
 export class WaGateway implements INodeType {
@@ -164,6 +169,10 @@ export class WaGateway implements INodeType {
 
 			str('text', 'Texto', { typeOptions: { rows: 3 }, required: true, show: { resource: ['message'], operation: ['sendText'] } }),
 			bool('linkPreview', 'Preview de link', false, { show: { resource: ['message'], operation: ['sendText'] } }),
+			str('mentions', 'Mencionar (números/JIDs — um por linha ou vírgula)', {
+				typeOptions: { rows: 2 }, placeholder: '5517999999999\n+55 17 98888-8888\n5517977777777@s.whatsapp.net',
+				description: 'Pra aparecer o "@Nome" destacado, inclua @<número> no texto da mensagem também (ex.: "Oi @5517999999999"). Aceita número puro, com +, ou JID completo.',
+				show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendPoll'] } }),
 
 			// botões / template (Cloud API)
 			str('text', 'Texto (corpo)', { typeOptions: { rows: 2 }, required: true, show: { resource: ['message'], operation: ['buttons'] } }),
@@ -276,6 +285,7 @@ export class WaGateway implements INodeType {
 						filename: c.get('filename', m.filename) || m.filename,
 						caption: c.get('caption', '') || undefined,
 						voice: operation === 'sendAudio' ? c.get('voice', false) : undefined,
+						mentions: mentionsOf(c),
 						...queue(c),
 					};
 				} else {
