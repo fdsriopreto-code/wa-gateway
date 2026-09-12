@@ -49,14 +49,25 @@ func ctxInfo(o engine.MessageOpts) *waProto.ContextInfo {
 	return ci
 }
 
-// normJID aceita "5511999999999" ou um jid completo e devolve sempre um jid.
+// normJID aceita um numero em qualquer formatacao comum ("+55 17 98888-8888",
+// "(17) 98888-8888", "5511999999999"...) ou um jid completo, e devolve sempre
+// um jid valido. So mantem digitos — espaco/traco/parenteses/ponto nunca
+// devem ir pro JID (o WhatsApp rejeita a mencao/citacao e o envio falha).
 func normJID(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" || strings.Contains(s, "@") {
 		return s
 	}
-	s = strings.TrimPrefix(s, "+")
-	return s + "@" + types.DefaultUserServer
+	digits := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] >= '0' && s[i] <= '9' {
+			digits = append(digits, s[i])
+		}
+	}
+	if len(digits) == 0 {
+		return s
+	}
+	return string(digits) + "@" + types.DefaultUserServer
 }
 
 var urlRe = regexp.MustCompile(`https?://[^\s]+`)

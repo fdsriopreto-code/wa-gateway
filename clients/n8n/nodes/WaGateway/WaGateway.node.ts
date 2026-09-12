@@ -170,8 +170,8 @@ export class WaGateway implements INodeType {
 			str('text', 'Texto', { typeOptions: { rows: 3 }, required: true, show: { resource: ['message'], operation: ['sendText'] } }),
 			bool('linkPreview', 'Preview de link', false, { show: { resource: ['message'], operation: ['sendText'] } }),
 			str('mentions', 'Mencionar (números/JIDs — um por linha ou vírgula)', {
-				typeOptions: { rows: 2 }, placeholder: '5517999999999\n+55 17 98888-8888\n5517977777777@s.whatsapp.net',
-				description: 'Pra aparecer o "@Nome" destacado, inclua @<número> no texto da mensagem também (ex.: "Oi @5517999999999"). Aceita número puro, com +, ou JID completo.',
+				typeOptions: { rows: 2 }, placeholder: '5517999999999\n5517988888888\n5517977777777@s.whatsapp.net',
+				description: 'Aceita qualquer formatação (+55, espaço, traço, parênteses — o gateway limpa sozinho) ou JID completo. Pra aparecer o "@Nome" destacado, inclua @<número, só dígitos> no texto da mensagem também (ex.: "Oi @5517999999999") — no texto tem que ser só números, sem formatação.',
 				show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendPoll'] } }),
 
 			// botões / template (Cloud API)
