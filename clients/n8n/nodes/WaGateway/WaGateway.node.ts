@@ -56,6 +56,13 @@ const OPS: Op[] = [
 		body: (c) => ({ session: c.get('session'), chatId: c.get('chatId'), name: c.get('pollName'), options: String(c.get('pollOptions')).split('\n').map((x) => x.trim()).filter(Boolean), selectable: c.get('selectable', 1), mentions: mentionsOf(c), ...queue(c) }) },
 	{ resource: 'message', operation: 'pollResult', method: 'GET',
 		path: (c) => `/api/${S(c)}/polls/${encodeURIComponent(c.get('pollMessageId') as string)}` },
+	{ resource: 'message', operation: 'sendContact', method: 'POST', path: () => '/api/sendContact',
+		body: (c) => ({
+			session: c.get('session'), chatId: c.get('chatId'),
+			contacts: String(c.get('contactsList', '') || '').split('\n').map((l: string) => l.trim()).filter(Boolean)
+				.map((l: string) => { const [name, ...rest] = l.split(':'); return { name: name.trim(), phone: rest.join(':').trim() }; }),
+			...queue(c),
+		}) },
 	{ resource: 'message', operation: 'buttons', method: 'POST', path: () => '/api/sendInteractive',
 		body: (c) => ({
 			session: c.get('session'), chatId: c.get('chatId'), type: 'button',
@@ -145,6 +152,7 @@ export class WaGateway implements INodeType {
 				['Enviar texto', 'sendText'], ['Enviar imagem', 'sendImage'], ['Enviar documento', 'sendFile'],
 				['Enviar vídeo', 'sendVideo'], ['Enviar áudio', 'sendAudio'], ['Enviar localização', 'sendLocation'],
 				['Enviar enquete', 'sendPoll'], ['Resultado da enquete', 'pollResult'],
+				['Enviar cartão de contato', 'sendContact'],
 				['Enviar botões (Cloud API)', 'buttons'], ['Enviar template (Cloud API)', 'template'],
 				['Reagir', 'react'], ['Encaminhar', 'forward'],
 			], 'sendText'),
@@ -164,7 +172,7 @@ export class WaGateway implements INodeType {
 			str('session', 'Sessão', { required: true, show: { resource: ['message', 'group', 'contact', 'chat', 'label'] } }),
 			str('session', 'Sessão', { required: true, show: { resource: ['session'], operation: ['get', 'start', 'stop', 'restart', 'logout', 'qr', 'pairCode', 'me'] } }),
 			str('chatId', 'Chat ID', { placeholder: '5599999999999@s.whatsapp.net', required: true,
-				show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendLocation', 'sendPoll', 'react', 'forward', 'buttons', 'template'] } }),
+				show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendLocation', 'sendPoll', 'sendContact', 'react', 'forward', 'buttons', 'template'] } }),
 			str('chatId', 'Chat ID', { required: true, show: { resource: ['chat'], operation: ['history'] } }),
 
 			str('text', 'Texto', { typeOptions: { rows: 3 }, required: true, show: { resource: ['message'], operation: ['sendText'] } }),
@@ -215,14 +223,20 @@ export class WaGateway implements INodeType {
 			str('pollMessageId', 'Message ID da enquete', { required: true, placeholder: '3EB0C2B74C2E330AEC2943',
 				show: { resource: ['message'], operation: ['pollResult'] } }),
 
+			// contact card
+			str('contactsList', 'Contatos (um por linha: Nome:Telefone)', {
+				typeOptions: { rows: 3 }, required: true, placeholder: 'Fulano:+5517999999999\nBeltrano:+5517988888888',
+				description: 'Telefone com DDI (ex.: +5517999999999). Manda um cartão de contato de verdade — a pessoa pode salvar direto no celular dela.',
+				show: { resource: ['message'], operation: ['sendContact'] } }),
+
 			// react / forward
 			str('messageId', 'Message ID', { required: true, show: { resource: ['message'], operation: ['react', 'forward'] } }),
 			str('emoji', 'Emoji', { placeholder: '👍  (vazio = remove)', show: { resource: ['message'], operation: ['react'] } }),
 			bool('fromMe', 'A mensagem alvo é minha', false, { show: { resource: ['message'], operation: ['react'] } }),
 
 			// enqueue (anti-ban)
-			bool('enqueue', 'Enfileirar (pacing anti-ban)', false, { show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendLocation', 'sendPoll'] } }),
-			str('delay', 'Delay extra', { placeholder: '30s', show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendLocation', 'sendPoll'], enqueue: [true] } }),
+			bool('enqueue', 'Enfileirar (pacing anti-ban)', false, { show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendLocation', 'sendPoll', 'sendContact'] } }),
+			str('delay', 'Delay extra', { placeholder: '30s', show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendFile', 'sendVideo', 'sendAudio', 'sendLocation', 'sendPoll', 'sendContact'], enqueue: [true] } }),
 
 			// session create
 			str('name', 'Nome da sessão', { placeholder: 'default', required: true, show: { resource: ['session'], operation: ['create'] } }),
