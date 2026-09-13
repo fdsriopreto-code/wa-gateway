@@ -25,7 +25,7 @@ func (e *Engine) send(ctx context.Context, chatID string, msg *waProto.Message) 
 	if err != nil {
 		return engine.SendResult{}, err
 	}
-	jid, err := types.ParseJID(chatID)
+	jid, err := parseJID(chatID)
 	if err != nil {
 		return engine.SendResult{}, fmt.Errorf("chatId invalido: %w", err)
 	}
@@ -192,7 +192,7 @@ func vcard(c engine.Contact) string {
 // --- operacoes sobre mensagens existentes ---
 
 func (e *Engine) refJIDs(ref engine.MessageRef) (chat, sender types.JID, err error) {
-	chat, err = types.ParseJID(ref.ChatID)
+	chat, err = parseJID(ref.ChatID)
 	if err != nil {
 		return chat, sender, fmt.Errorf("chatId invalido: %w", err)
 	}
@@ -202,7 +202,7 @@ func (e *Engine) refJIDs(ref engine.MessageRef) (chat, sender types.JID, err err
 			sender = c.ToNonAD()
 		}
 	case ref.SenderID != "":
-		sender, err = types.ParseJID(ref.SenderID)
+		sender, err = parseJID(ref.SenderID)
 		if err != nil {
 			return chat, sender, fmt.Errorf("senderId invalido: %w", err)
 		}
@@ -290,7 +290,7 @@ func (e *Engine) SendChatPresence(ctx context.Context, chatID string, state engi
 	if err != nil {
 		return err
 	}
-	jid, err := types.ParseJID(chatID)
+	jid, err := parseJID(chatID)
 	if err != nil {
 		return fmt.Errorf("chatId invalido: %w", err)
 	}

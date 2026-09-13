@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"go.mau.fi/whatsmeow/appstate"
-	"go.mau.fi/whatsmeow/types"
 	waEvents "go.mau.fi/whatsmeow/types/events"
 
 	"wa-gateway/internal/engine"
@@ -65,7 +64,7 @@ func (e *Engine) SetChatLabel(ctx context.Context, chatID, labelID string, on bo
 	if err != nil {
 		return err
 	}
-	jid, err := types.ParseJID(chatID)
+	jid, err := parseJID(chatID)
 	if err != nil {
 		return fmt.Errorf("chatId invalido: %w", err)
 	}
@@ -77,7 +76,7 @@ func (e *Engine) SetMessageLabel(ctx context.Context, chatID, messageID, labelID
 	if err != nil {
 		return err
 	}
-	jid, err := types.ParseJID(chatID)
+	jid, err := parseJID(chatID)
 	if err != nil {
 		return fmt.Errorf("chatId invalido: %w", err)
 	}

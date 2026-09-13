@@ -39,7 +39,7 @@ func (e *Engine) GetUserInfo(ctx context.Context, jids []string) ([]engine.UserI
 	}
 	parsed := make([]types.JID, 0, len(jids))
 	for _, s := range jids {
-		j, err := types.ParseJID(s)
+		j, err := parseJID(s)
 		if err != nil {
 			return nil, fmt.Errorf("jid invalido %q: %w", s, err)
 		}
@@ -68,7 +68,7 @@ func (e *Engine) GetProfilePicture(ctx context.Context, jid string, preview bool
 	if err != nil {
 		return "", err
 	}
-	j, err := types.ParseJID(jid)
+	j, err := parseJID(jid)
 	if err != nil {
 		return "", fmt.Errorf("jid invalido: %w", err)
 	}
@@ -155,7 +155,7 @@ func (e *Engine) GroupInfo(ctx context.Context, jid string) (engine.Group, error
 	if err != nil {
 		return engine.Group{}, err
 	}
-	j, err := types.ParseJID(jid)
+	j, err := parseJID(jid)
 	if err != nil {
 		return engine.Group{}, fmt.Errorf("jid invalido: %w", err)
 	}
@@ -187,7 +187,7 @@ func (e *Engine) LeaveGroup(ctx context.Context, jid string) error {
 	if err != nil {
 		return err
 	}
-	j, err := types.ParseJID(jid)
+	j, err := parseJID(jid)
 	if err != nil {
 		return fmt.Errorf("jid invalido: %w", err)
 	}
@@ -199,7 +199,7 @@ func (e *Engine) UpdateParticipants(ctx context.Context, jid string, action engi
 	if err != nil {
 		return nil, err
 	}
-	j, err := types.ParseJID(jid)
+	j, err := parseJID(jid)
 	if err != nil {
 		return nil, fmt.Errorf("jid invalido: %w", err)
 	}
@@ -240,7 +240,7 @@ func (e *Engine) SetGroupName(ctx context.Context, jid, name string) error {
 	if err != nil {
 		return err
 	}
-	j, err := types.ParseJID(jid)
+	j, err := parseJID(jid)
 	if err != nil {
 		return fmt.Errorf("jid invalido: %w", err)
 	}
@@ -252,7 +252,7 @@ func (e *Engine) SetGroupTopic(ctx context.Context, jid, topic string) error {
 	if err != nil {
 		return err
 	}
-	j, err := types.ParseJID(jid)
+	j, err := parseJID(jid)
 	if err != nil {
 		return fmt.Errorf("jid invalido: %w", err)
 	}
@@ -264,7 +264,7 @@ func (e *Engine) SetGroupPhoto(ctx context.Context, jid string, data []byte) (st
 	if err != nil {
 		return "", err
 	}
-	j, err := types.ParseJID(jid)
+	j, err := parseJID(jid)
 	if err != nil {
 		return "", fmt.Errorf("jid invalido: %w", err)
 	}
@@ -277,7 +277,7 @@ func (e *Engine) SetGroupAnnounce(ctx context.Context, jid string, on bool) erro
 	if err != nil {
 		return err
 	}
-	j, err := types.ParseJID(jid)
+	j, err := parseJID(jid)
 	if err != nil {
 		return fmt.Errorf("jid invalido: %w", err)
 	}
@@ -290,7 +290,7 @@ func (e *Engine) SetGroupLocked(ctx context.Context, jid string, on bool) error 
 	if err != nil {
 		return err
 	}
-	j, err := types.ParseJID(jid)
+	j, err := parseJID(jid)
 	if err != nil {
 		return fmt.Errorf("jid invalido: %w", err)
 	}
@@ -302,7 +302,7 @@ func (e *Engine) GroupInviteLink(ctx context.Context, jid string, reset bool) (s
 	if err != nil {
 		return "", err
 	}
-	j, err := types.ParseJID(jid)
+	j, err := parseJID(jid)
 	if err != nil {
 		return "", fmt.Errorf("jid invalido: %w", err)
 	}
@@ -324,7 +324,7 @@ func (e *Engine) JoinGroupWithLink(ctx context.Context, code string) (string, er
 func parseJIDs(in []string) ([]types.JID, error) {
 	out := make([]types.JID, 0, len(in))
 	for _, s := range in {
-		j, err := types.ParseJID(s)
+		j, err := parseJID(s)
 		if err != nil {
 			return nil, fmt.Errorf("jid invalido %q: %w", s, err)
 		}

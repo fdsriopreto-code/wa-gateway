@@ -70,6 +70,15 @@ func normJID(s string) string {
 	return string(digits) + "@" + types.DefaultUserServer
 }
 
+// parseJID e um types.ParseJID tolerante a espaco/quebra de linha sobrando
+// nas pontas — comum quando o valor vem de uma expressao colada no n8n (ou
+// qualquer copy-paste) e sobra um "\n" depois do "}}". Sem isso, o JID vira
+// invalido e o envio falha com erro generico (ex.: 502 no n8n) sem dar pista
+// nenhuma da causa.
+func parseJID(s string) (types.JID, error) {
+	return types.ParseJID(strings.TrimSpace(s))
+}
+
 var urlRe = regexp.MustCompile(`https?://[^\s]+`)
 
 // applyLinkPreview tenta buscar OG tags do primeiro link do texto (best-effort).
