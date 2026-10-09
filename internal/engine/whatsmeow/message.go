@@ -81,6 +81,16 @@ func normalizeMessage(evt *waEvents.Message, includeRaw bool) map[string]any {
 			out["reactionTargetId"] = k.GetID()
 		}
 	}
+	// Localização (pino ou tempo real): mesmo formato do engine cloud.
+	if l := msg.GetLocationMessage(); l != nil {
+		loc := map[string]any{"latitude": l.GetDegreesLatitude(), "longitude": l.GetDegreesLongitude()}
+		putIf(loc, "name", l.GetName())
+		putIf(loc, "address", l.GetAddress())
+		putIf(loc, "url", l.GetURL())
+		out["location"] = loc
+	} else if l := msg.GetLiveLocationMessage(); l != nil {
+		out["location"] = map[string]any{"latitude": l.GetDegreesLatitude(), "longitude": l.GetDegreesLongitude(), "live": true}
+	}
 	return out
 }
 
