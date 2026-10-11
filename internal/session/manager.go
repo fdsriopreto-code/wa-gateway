@@ -502,14 +502,58 @@ func (m *Manager) RestoreOwned(ctx context.Context) {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := m.start(ctx, r.Name, true); err != nil && !errors.Is(err, ErrLocked) {
-				m.log.Warn("restore: falha ao iniciar", "session", r.Name, "err", err)
-			} else {
+			switch err := m.start(ctx, r.Name, true); {
+			case err == nil:
 				m.log.Info("restore: sessao reconectando", "session", r.Name, "era", r.Status)
+			case errors.Is(err, ErrLocked):
+				// outro no (ex.: o container antigo no deploy) ainda segura: o ReconcileLoop pega depois
+				m.log.Info("restore: sessao com outro no — fica para o reconcile", "session", r.Name)
+			default:
+				m.log.Warn("restore: falha ao iniciar", "session", r.Name, "err", err)
 			}
 		}()
 	}
 	wg.Wait()
+}
+
+// ReconcileLoop liga, a cada 30 s, as sessoes que deveriam estar rodando (WORKING ou
+// STARTING no banco) e nao estao em nenhum no (lock livre). Cobre o deploy: o container
+// novo sobe com o antigo ainda vivo, o RestoreOwned encontra o lock ocupado e pula; o
+// antigo solta o lock ao desligar (sem mudar o status) e a sessao ficava orfa, parecendo
+// conectada sem receber nada (incidentes de 09/10 e 11/10).
+func (m *Manager) ReconcileLoop(ctx context.Context) {
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		recs, err := m.store.ListSessions(ctx)
+		if err != nil {
+			continue
+		}
+		for _, r := range recs {
+			if r.Status != string(engine.StatusWorking) && r.Status != string(engine.StatusStarting) {
+				continue
+			}
+			m.mu.RLock()
+			_, rodando := m.running[r.Name]
+			m.mu.RUnlock()
+			if rodando {
+				continue
+			}
+			switch err := m.start(ctx, r.Name, true); {
+			case err == nil:
+				m.log.Warn("reconcile: sessao estava sem nenhum no rodando — religada", "session", r.Name)
+			case errors.Is(err, ErrLocked):
+				// rodando em outro no: ok
+			default:
+				m.log.Warn("reconcile: falha ao religar", "session", r.Name, "err", err)
+			}
+		}
+	}
 }
 
 func (m *Manager) refreshLock(name string, stop <-chan struct{}) {

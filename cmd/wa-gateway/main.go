@@ -212,6 +212,7 @@ func run() error {
 	ackCB := ackcb.New(rc, log, cfg.NodeID)
 
 	go mgr.RestoreOwned(ctx)
+	go mgr.ReconcileLoop(ctx) // religa sessoes orfas (ex.: lock do container antigo no deploy)
 	go campaigns.Resume(ctx) // retoma campanhas que ficaram "running"
 	go autoreply.New(mgr, outQueue, rc, log, cfg.NodeID).Run(ctx, evStream)
 	go ackCB.Run(ctx, evStream) // StatusCallback por mensagem (callbackUrl)
