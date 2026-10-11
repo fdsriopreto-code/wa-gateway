@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.mau.fi/whatsmeow"
@@ -58,6 +59,9 @@ type Engine struct {
 	// whatsmeow re-sincroniza via app state no reconnect.
 	labelsMu sync.RWMutex
 	labels   map[string]engine.Label
+
+	// hora (UnixNano) do último evento do WhatsApp — usada pelo vigia (watchdog.go)
+	ultimoEvento atomic.Int64
 }
 
 const mediaWorkers = 4
@@ -158,6 +162,8 @@ func (e *Engine) Start(ctx context.Context) error {
 			return fmt.Errorf("connect: %w", err)
 		}
 	}
+	e.marcarEvento()
+	go e.vigiar(e.ctx, client)
 	return nil
 }
 
@@ -242,6 +248,7 @@ func (e *Engine) pumpQR(ch <-chan whatsmeow.QRChannelItem) {
 }
 
 func (e *Engine) handleEvent(raw any) {
+	e.marcarEvento()
 	if st, ok := connState(raw); ok {
 		e.mu.Lock()
 		e.setStatusLocked(st)
