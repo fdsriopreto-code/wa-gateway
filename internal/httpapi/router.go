@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"crypto/subtle"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -26,7 +28,7 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 	// publico
 	r.Get("/health", d.health)
 	r.Get("/ready", d.ready)
-	r.Get("/metrics", promhttp.Handler().ServeHTTP)
+	r.Get("/metrics", metricsAuth(d.MetricsToken, promhttp.Handler()).ServeHTTP)
 	r.Get("/api/version", d.version)
 	r.Get("/openapi.json", d.openapiJSON)
 	r.Get("/docs", d.docsPage)
@@ -190,4 +192,21 @@ func NewRouter(d Deps, authn *auth.Authenticator) http.Handler {
 	r.Handle("/*", spaHandler())
 
 	return r
+}
+
+// metricsAuth protege o /metrics com um bearer token (METRICS_TOKEN). Os
+// labels expõem o nome de todas as sessões — num SaaS isso é lista de clientes.
+// Token vazio = público (compat).
+func metricsAuth(token string, next http.Handler) http.Handler {
+	if token == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

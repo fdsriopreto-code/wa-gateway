@@ -69,6 +69,13 @@ func (d Deps) retryDelivery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
+	if p, _ := auth.FromContext(r.Context()); p.SessionScoped() {
+		sess, err := d.Store.DeliverySession(r.Context(), id)
+		if err != nil || !p.CanSession(sess) {
+			writeErr(w, http.StatusNotFound, "not_found", "entrega nao encontrada")
+			return
+		}
+	}
 	if err := d.Dispatcher.Retry(r.Context(), id); err != nil {
 		writeErr(w, http.StatusBadRequest, "retry_failed", err.Error())
 		return

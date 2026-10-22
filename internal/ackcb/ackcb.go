@@ -17,6 +17,7 @@ import (
 
 	"wa-gateway/internal/cache"
 	"wa-gateway/internal/events"
+	"wa-gateway/internal/netguard"
 )
 
 const armTTL = 15 * time.Minute
@@ -34,7 +35,7 @@ type Store struct {
 func New(rc *cache.Redis, log *slog.Logger, nodeID string) *Store {
 	return &Store{
 		rc:     rc,
-		http:   &http.Client{Timeout: 10 * time.Second},
+		http:   netguard.Client(10 * time.Second), // callbackUrl vem do cliente: anti-SSRF
 		log:    log.With("comp", "ackcb"),
 		nodeID: nodeID,
 	}

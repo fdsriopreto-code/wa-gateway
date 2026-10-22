@@ -328,6 +328,16 @@ sequenceDiagram
   `?session=` ou do corpo JSON (`{"session": …}` — com buffer+restore).
   `/ws` é isento (o `Hub` já faz fan-out entre nós).
 - `GET /api/cluster` — nó atual, `routingEnabled`, nós vivos, sessões locais.
+- **Teto por nó** (`MAX_SESSIONS_PER_NODE`): nó cheio não assume sessão. Um
+  `start` por API num nó cheio marca a sessão `STARTING` no banco e responde
+  `202`; o `ReconcileLoop` de um nó com folga a liga em até ~30 s.
+- **Balanceamento:** a cada rodada do `ReconcileLoop` (30 s) o nó espera
+  0–3 s aleatórios + 15 ms por sessão que já roda (teto 15 s) antes de varrer
+  e assume no máximo 25 órfãs — o nó mais vazio chega primeiro nos locks.
+- **Store do whatsmeow:** um único `sqlstore.Container` (um pool `database/sql`,
+  `WA_STORE_MAX_CONNS`) por processo, compartilhado por todas as sessões. O
+  device da sessão é buscado direto pelo JID (`GetDevice`); a varredura de
+  todos os devices só roda no caso raro de JID divergente.
 
 ---
 
@@ -362,6 +372,14 @@ Tudo por env var. Padrões entre `()`.
 | `LOG_LEVEL` (`info`) / `LOG_FORMAT` (`text`/`json`) | logger |
 | `NODE_ID` | id do nó (multi-nó); vazio = `hostname-pid` |
 | `NODE_ADVERTISE_URL` | URL HTTP deste nó p/ os outros. Setado = liga roteamento de request entre nós. Vazio = off |
+| `MAX_SESSIONS_PER_NODE` (`0`=∞) | teto de sessões vivas por nó; o excedente fica pros outros nós |
+| `WA_STORE_MAX_CONNS` (`30`) | pool do store do whatsmeow (compartilhado por todas as sessões do nó). Some ao `DATABASE_MAX_CONNS` pra dimensionar o Postgres |
+| `EVENTS_STREAM_MAXLEN` (`100000`) | teto aprox. do Redis Stream `wa:events`. Suba com muitas sessões, senão evento pode ser cortado antes do webhook consumir |
+| `WA_PROXY` | proxy padrão (`socks5://…` / `http://…`) da conexão com o WhatsApp. Override: `config.proxy` |
+| `SSRF_BLOCK_PRIVATE` (`false`) | anti-SSRF estrito pra **todas** as chaves (loopback/privada/CGNAT). Chave de tenant (sem `*`) já é sempre estrita. Link-local/metadados são sempre bloqueados |
+| `SSRF_ALLOW_HOSTS` (CSV) | hosts, `host:porta`, IPs ou CIDRs internos liberados mesmo no modo estrito (ex.: `n8n,10.0.5.0/24`) |
+| `METRICS_TOKEN` | exige `Authorization: Bearer <token>` no `/metrics`. Vazio = público |
+| `ALLOW_SCOPED_CAMPAIGNS` (`false`) | libera campanhas (envio em massa) pra chaves `session:<nome>` |
 
 Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
 
@@ -382,6 +400,8 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
   "rawEvents": false,   // inclui o struct cru do whatsmeow em payload.raw
   "autoRead": false,    // marca recebidas como lidas (recibo azul)
   "autoOnline": false,  // mantém presença "available" após conectar
+  "proxy": "socks5://user:senha@host:1080", // proxy desta sessão (cifrado em repouso); vazio = WA_PROXY
+  "typing": { "enabled": true, "msPerChar": 40, "maxMs": 6000 }, // "digitando…" antes de cada texto
   "otp": { "brand": "ACME", "ttlSeconds": 600, "maxAttempts": 4, "hourlyCap": 8 }, // padrões do /otp/send — ver OTP.md
   "leads": { "enabled": false }, // desliga a coleta de lead/CRM só desta sessão
   "autoReply": {        // resposta automática p/ conversas 1:1 (grupos ignorados)
@@ -412,23 +432,43 @@ insert a partir do `ttl` efetivo (sessão ou `MEDIA_TTL`). Apagar na mão:
 - **Tabela `api_keys`**: hash Argon2id, `scopes text[]`, `revoked_at`.
   `Principal.Can(scope)` = `*` ou match exato. Rotas de admin usam `canAdmin`.
 - **Escopo por sessão** (`sessionScopeMW`): uma chave com `scopes` como
-  `["session:vendas", "session:suporte"]` só opera essas sessões — o
-  middleware pega o nome da sessão (path/query/corpo, via `sessionFromRequest`)
-  e 403 `forbidden_session` se `!CanSession(nome)`. `*` e `session:*` passam
-  livres. Chave escopada: `GET /api/sessions` filtra pras dela, `POST
-  /api/sessions` (criar) é barrado, `/ws` exige `?session=<nome>`,
-  `/api/stats` e `/api/cluster` (globais) exigem `canAdmin`.
+  `["session:vendas", "session:suporte"]` só opera essas sessões. Para chave
+  escopada o middleware confere **toda** referência a sessão que um handler
+  possa ler: o path `{session}`, todos os `?session=` e todas as chaves de topo
+  do corpo JSON cujo nome casa com `session` sem diferenciar maiúsculas (o
+  `encoding/json` casa assim e fica com o último valor repetido). O corpo é lido
+  inteiro (até 128MB) qualquer que seja o `Content-Type`; JSON inválido ou
+  `session` não-texto → 400. Qualquer uma fora do escopo → 403
+  `forbidden_session`. `*` e `session:*` passam livres. Chave escopada:
+  `GET /api/sessions` filtra pras dela, `POST /api/sessions` (criar) é barrado,
+  `/ws` exige `?session=<nome>`, `/api/stats` e `/api/cluster` (globais) exigem
+  `canAdmin`, `GET /api/media/{id}` e `POST /api/deliveries/{id}/retry`
+  conferem a sessão dona (404 se for de outra), campanhas são barradas (salvo
+  `ALLOW_SCOPED_CAMPAIGNS`).
+- **MCP** (`/mcp`): a sessão vem em `params.arguments`, fora do alcance do
+  middleware — `mcpScopeDenied` aplica a mesma regra por ferramenta
+  (`create_session` barrado, `list_sessions` filtrado, demais exigem `session`
+  do escopo).
+- **Anti-SSRF** (`internal/netguard`): webhook, `callbackUrl`, mídia por URL e
+  link preview saem por um dial que checa o IP depois do DNS (pega redirect e
+  DNS rebinding). Link-local (metadados da cloud), multicast e `0.0.0.0` são
+  sempre bloqueados. Chave sem `*` liga o modo estrito no contexto do request
+  (bloqueia também loopback, RFC1918, ULA e CGNAT), com pool de conexões
+  separado; webhook, `callbackUrl` e `config.proxy` cadastrados por ela são validados no
+  cadastro (a entrega é em background). `SSRF_BLOCK_PRIVATE=true` estende o
+  estrito a todas as chaves; `SSRF_ALLOW_HOSTS` libera exceções.
 - **Cifra em repouso** (`internal/secret`, `SECRET_KEY`): `Manager.Upsert`
   sela via `session.MapSecrets` — `webhooks[].hmac.secret` **e**
-  `cloud.accessToken` / `cloud.appSecret`; `Get`/`List` e o
+  `cloud.accessToken` / `cloud.appSecret` e `proxy`; `Get`/`List` e o
   `webhook.Dispatcher` decifram na leitura. Formato `enc:v1:<base64>`.
   Migração é lazy — valor em texto puro continua funcionando e vira cifrado
   no próximo `PUT`. `SECRET_KEY_OLD` (CSV) = chaves antigas que só decifram,
   para rotação sem downtime.
 - **Rate limit** (`rateLimitMW`): token bucket por `KeyID` no Redis, fail-open.
   Resposta `429 rate_limited` + `Retry-After` + headers `X-RateLimit-*`.
-- Rotas públicas (sem auth): `/health`, `/ready`, `/metrics`, `/api/version`,
-  `/openapi.json`, `/docs`, e o SPA. Todo o resto exige token.
+- Rotas públicas (sem auth): `/health`, `/ready`, `/metrics` (salvo
+  `METRICS_TOKEN`), `/api/version`, `/openapi.json`, `/docs`, e o SPA. Todo o
+  resto exige token.
 
 ---
 

@@ -19,6 +19,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	"wa-gateway/internal/events"
+	"wa-gateway/internal/netguard"
 	"wa-gateway/internal/observability"
 	"wa-gateway/internal/secret"
 	"wa-gateway/internal/session"
@@ -67,6 +68,7 @@ func NewDispatcher(st *store.Store, client *asynq.Client, log *slog.Logger, time
 		maxAttempts = 15
 	}
 	tr := &http.Transport{
+		DialContext:         netguard.DialContext, // URL de webhook vem do cliente: anti-SSRF
 		MaxIdleConns:        200,
 		MaxIdleConnsPerHost: 32,
 		IdleConnTimeout:     90 * time.Second,

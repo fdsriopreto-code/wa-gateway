@@ -74,6 +74,13 @@ func (d Deps) createCampaign(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotImplemented, "not_supported", "campanhas desligadas (sem fila de saída)")
 		return
 	}
+	if p, _ := auth.FromContext(r.Context()); p.SessionScoped() && !d.ScopedCampaigns {
+		// disparo em massa é o que mais queima número — e o IP de todos os
+		// clientes do nó. Chave de tenant só faz campanha se o operador ligar.
+		writeErr(w, http.StatusForbidden, "campaigns_disabled",
+			"campanhas desligadas para chaves com escopo por sessão (ALLOW_SCOPED_CAMPAIGNS)")
+		return
+	}
 	sess := chi.URLParam(r, "session")
 	var req campaignReq
 	if err := decode(r, &req); err != nil {

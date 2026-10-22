@@ -30,6 +30,7 @@ import (
 	"wa-gateway/internal/inbox"
 	"wa-gateway/internal/leads"
 	"wa-gateway/internal/media"
+	"wa-gateway/internal/netguard"
 	"wa-gateway/internal/observability"
 	"wa-gateway/internal/otp"
 	"wa-gateway/internal/outbox"
@@ -92,6 +93,10 @@ func run() error {
 	bus.OnPublish = func(name string) { observability.EventsPublished.WithLabelValues(name).Inc() }
 	bus.OnDrop = func(sub string) { observability.BusDropped.WithLabelValues(sub).Inc() }
 	evStream := events.NewStream(rc.Raw(), log)
+	evStream.SetMaxLen(int64(cfg.EventsStreamMaxLen))
+
+	netguard.Configure(cfg.SSRFBlockPrivate, cfg.SSRFAllowHosts)
+	log.Info("anti-SSRF", "bloquear_rede_privada", cfg.SSRFBlockPrivate, "liberados", cfg.SSRFAllowHosts)
 
 	secretBox, err := secret.New(cfg.SecretKey, cfg.SecretKeyOld...)
 	if err != nil {
@@ -144,6 +149,11 @@ func run() error {
 	mgr.SetEventStream(evStream)
 	mgr.SetSecretBox(secretBox)
 	mgr.SetMediaTTL(cfg.MediaTTL)
+	mgr.SetDefaultProxy(cfg.WAProxy)
+	if cfg.MaxSessionsPerNode > 0 {
+		mgr.SetMaxSessions(cfg.MaxSessionsPerNode)
+		log.Info("teto de sessões por nó", "max", cfg.MaxSessionsPerNode)
+	}
 	mediaSink.SetPolicy(mgr.MediaPolicy)
 	go mediaSink.RunGC(ctx, cfg.MediaGCInterval)
 	enricher := enrich.New(cfg.AIBaseURL, cfg.AIAPIKey, cfg.AITranscribeModel, cfg.AIVisionModel)
@@ -213,7 +223,7 @@ func run() error {
 
 	go mgr.RestoreOwned(ctx)
 	go mgr.ReconcileLoop(ctx) // religa sessoes orfas (ex.: lock do container antigo no deploy)
-	go campaigns.Resume(ctx) // retoma campanhas que ficaram "running"
+	go campaigns.Resume(ctx)  // retoma campanhas que ficaram "running"
 	go autoreply.New(mgr, outQueue, rc, log, cfg.NodeID).Run(ctx, evStream)
 	go ackCB.Run(ctx, evStream) // StatusCallback por mensagem (callbackUrl)
 	if cfg.LeadsEnabled {
@@ -259,6 +269,9 @@ func run() error {
 		RateRPS:     float64(cfg.RateLimitRPS),
 		RateBurst:   float64(cfg.RateLimitBurst),
 		LeadStale:   cfg.LeadStaleAfter,
+
+		MetricsToken:    cfg.MetricsToken,
+		ScopedCampaigns: cfg.AllowScopedCampaigns,
 	}, authn)
 
 	srv := &http.Server{

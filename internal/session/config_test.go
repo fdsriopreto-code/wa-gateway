@@ -76,3 +76,17 @@ func TestMapSecrets(t *testing.T) {
 		t.Fatalf("cloud não cifrou certo: %+v", cc.Cloud)
 	}
 }
+
+func TestMapSecretsProxy(t *testing.T) {
+	raw := []byte(`{"proxy":"socks5://u:senha@1.2.3.4:1080","typing":{"enabled":true}}`)
+	c, err := ParseConfig(MapSecrets(raw, func(s string) string { return "E:" + s }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Proxy != "E:socks5://u:senha@1.2.3.4:1080" {
+		t.Fatalf("proxy não cifrou: %q", c.Proxy)
+	}
+	if c.Typing == nil || !c.Typing.Enabled {
+		t.Fatal("typing deveria sobreviver")
+	}
+}

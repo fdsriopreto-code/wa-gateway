@@ -11,13 +11,14 @@ import (
 	"time"
 
 	"wa-gateway/internal/engine"
+	"wa-gateway/internal/netguard"
 	"wa-gateway/internal/outbox"
 )
 
 // maxMediaBytes é o teto de download de mídia por URL (mesmo do envio direto).
 const maxMediaBytes = 64 << 20
 
-var mediaHTTP = &http.Client{Timeout: 30 * time.Second}
+var mediaHTTP = netguard.Client(30 * time.Second) // URL vem do cliente: anti-SSRF
 
 // fetchMediaURL baixa uma mídia de uma URL http(s) e devolve os bytes, o
 // mimetype (do header Content-Type) e um nome de arquivo derivado do path.
@@ -173,6 +174,14 @@ func (d Deps) sendText(w http.ResponseWriter, r *http.Request) {
 // armCB registra o StatusCallback por mensagem, se pedido.
 func (d Deps) armCB(ctx context.Context, session string, res engine.SendResult, o cbOpts) {
 	if d.AckCB == nil || o.CallbackURL == "" || res.MessageID == "" {
+		return
+	}
+	// o POST do callback sai depois, sem o contexto do request: valida aqui
+	// (modo estrito pra chave de tenant) pra não virar SSRF.
+	if err := netguard.CheckURL(ctx, o.CallbackURL, false); err != nil {
+		if d.Log != nil {
+			d.Log.Warn("callbackUrl recusada", "session", session, "err", err)
+		}
 		return
 	}
 	d.AckCB.Arm(ctx, session, res.MessageID, o.CallbackURL, o.CallbackData, 0)

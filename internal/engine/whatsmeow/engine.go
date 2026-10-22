@@ -106,8 +106,7 @@ func (e *Engine) Start(ctx context.Context) error {
 	e.setStatusLocked(engine.StatusStarting)
 	e.mu.Unlock()
 
-	dbLog := waLog.Stdout("wa-sqlstore/"+e.deps.Session, "WARN", false)
-	container, err := sqlstore.New(ctx, "pgx", e.deps.DSN, dbLog)
+	container, err := sharedContainer(ctx, e.deps.DSN)
 	if err != nil {
 		e.fail()
 		return fmt.Errorf("sqlstore: %w", err)
@@ -127,6 +126,14 @@ func (e *Engine) Start(ctx context.Context) error {
 	clientLog := waLog.Stdout("wa/"+e.deps.Session, "INFO", false)
 	client := whatsmeow.NewClient(device, clientLog)
 	client.AddEventHandler(e.handleEvent)
+	if e.deps.Proxy != "" {
+		// proxy por sessão: espalha os números em IPs diferentes (1000 números
+		// saindo do mesmo IP de datacenter é sinal ruim pro WhatsApp).
+		if err := client.SetProxyAddress(e.deps.Proxy); err != nil {
+			e.fail()
+			return fmt.Errorf("proxy: %w", err)
+		}
+	}
 
 	e.mu.Lock()
 	e.container = container
@@ -171,12 +178,24 @@ func (e *Engine) Start(ctx context.Context) error {
 // numero (User do JID) bata com o que a sessao ja pareou. Se nao achar,
 // devolve um device novo (fluxo de QR).
 func (e *Engine) pickDevice(ctx context.Context, container *sqlstore.Container) (*waStore.Device, error) {
+	want, perr := types.ParseJID(e.deps.StoredJID)
+	if perr == nil && want.User != "" {
+		// caminho normal: busca direta pelo JID (uma linha), sem varrer o
+		// store inteiro — com 1000 sessões, varrer a cada start vira N².
+		d, err := container.GetDevice(ctx, want)
+		if err != nil {
+			return nil, fmt.Errorf("buscar device: %w", err)
+		}
+		if d != nil {
+			return d, nil
+		}
+	}
+
 	all, err := container.GetAllDevices(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listar devices: %w", err)
 	}
 
-	want, perr := types.ParseJID(e.deps.StoredJID)
 	if e.deps.StoredJID == "" || perr != nil || want.User == "" {
 		if e.deps.StoredJID != "" {
 			e.deps.Logger.Warn("StoredJID invalido, tratando como sessao nova", "storedJID", e.deps.StoredJID, "err", perr)
@@ -347,6 +366,31 @@ func (e *Engine) autoRead(ev *waEvents.Message) {
 	_ = client.MarkRead(ctx, []types.MessageID{ev.Info.ID}, time.Now(), ev.Info.Chat, sender)
 }
 
+// simulateTyping mostra "digitando..." por um tempo proporcional ao texto
+// (config.typing). Best-effort: erro de presença não impede o envio.
+func (e *Engine) simulateTyping(ctx context.Context, chatID string, chars int) {
+	b := e.behavior()
+	if b.TypingMsPerChar <= 0 || chars == 0 {
+		return
+	}
+	d := time.Duration(chars*b.TypingMsPerChar) * time.Millisecond
+	if max := time.Duration(b.TypingMaxMs) * time.Millisecond; d > max {
+		d = max
+	}
+	if d < 800*time.Millisecond {
+		d = 800 * time.Millisecond
+	}
+	if err := e.SendChatPresence(ctx, chatID, engine.ChatStateTyping); err != nil {
+		return
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
 // goOnline manda presenca "available" apos conectar (mantem o "online").
 func (e *Engine) goOnline() {
 	e.mu.RLock()
@@ -500,6 +544,7 @@ func (e *Engine) currentClient() (*whatsmeow.Client, error) {
 }
 
 func (e *Engine) SendText(ctx context.Context, chatID, text string, opts engine.MessageOpts) (engine.SendResult, error) {
+	e.simulateTyping(ctx, chatID, len([]rune(text)))
 	ci := ctxInfo(opts)
 	// texto puro sem extras -> Conversation; com citacao/mencao/preview -> ExtendedText.
 	if ci == nil && !opts.LinkPreview {

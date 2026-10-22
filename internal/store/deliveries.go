@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // CreateDelivery insere a linha da entrega. existed=true quando já havia uma
@@ -34,6 +37,16 @@ func (s *Store) MarkPending(ctx context.Context, id string) error {
 
 // GetDeliveryPayload devolve o payload guardado da entrega (envelope + secret
 // + headers), ou nil se a entrega é anterior à coluna payload.
+// DeliverySession devolve a sessão dona de uma entrega de webhook.
+func (s *Store) DeliverySession(ctx context.Context, id string) (string, error) {
+	var sess string
+	err := s.Pool.QueryRow(ctx, `SELECT session FROM webhook_deliveries WHERE id=$1`, id).Scan(&sess)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return sess, err
+}
+
 func (s *Store) GetDeliveryPayload(ctx context.Context, id string) ([]byte, error) {
 	var p []byte
 	err := s.Pool.QueryRow(ctx, `SELECT payload FROM webhook_deliveries WHERE id=$1`, id).Scan(&p)

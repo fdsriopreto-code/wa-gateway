@@ -320,6 +320,11 @@ type AutoBehavior struct {
 	AutoRead bool
 	// AutoOnline mantem a sessao com presenca "available" apos conectar.
 	AutoOnline bool
+	// TypingMsPerChar > 0 liga o "digitando..." antes de cada texto enviado,
+	// por len(texto)*TypingMsPerChar (teto TypingMaxMs). Resposta instantânea
+	// de bot é um dos sinais que mais chamam atenção do WhatsApp.
+	TypingMsPerChar int
+	TypingMaxMs     int
 }
 
 // CloudConfig e a configuracao de uma sessao que fala a WhatsApp Cloud API
@@ -368,6 +373,9 @@ type Deps struct {
 	// e nao iniciada interativamente. So nesse caso a engine pode adotar um
 	// device orfao do store quando StoredJID esta vazio.
 	Recovering bool
+	// Proxy (socks5://... ou http://...) usado pela conexão desta sessão com
+	// o WhatsApp. Vazio = conexão direta.
+	Proxy string
 }
 
 type Factory func(deps Deps) (Engine, error)
