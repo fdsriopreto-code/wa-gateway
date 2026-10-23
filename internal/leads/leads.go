@@ -43,7 +43,13 @@ func (i *Ingestor) Run(ctx context.Context, stream *events.Stream) {
 	if stream == nil {
 		return
 	}
-	stream.Consume(ctx, "leads", i.nodeID, []string{events.MessageAny, events.MessageAck}, 4, i.handle)
+	stream.Consume(ctx, "leads", i.nodeID, []string{events.MessageAny, events.MessageAck}, 4, func(ctx context.Context, e events.Event) error {
+		err := i.handle(ctx, e)
+		if store.IsPermanent(err) {
+			return events.Permanent(err) // ex.: sessão apagada com evento ainda no stream
+		}
+		return err
+	})
 }
 
 func (i *Ingestor) handle(ctx context.Context, e events.Event) error {

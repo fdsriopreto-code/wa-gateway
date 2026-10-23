@@ -3,6 +3,8 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -16,6 +18,24 @@ import (
 // inbox consomem dele (consumer groups, com XACK e replay de pendencias),
 // entao um restart / crash no meio nao perde entrega nem persistencia.
 const streamKey = "wa:events"
+
+// maxFailures: quantas vezes um evento pode falhar no mesmo grupo antes de
+// ser descartado (XACK + log de erro). Com o claimStale (pendência ociosa
+// > 60 s, varrida a cada ~30 s) isso dá ~20+ min — cobre uma queda curta do
+// Postgres, mas não deixa um evento "envenenado" girar pra sempre.
+const maxFailures = 20
+
+// ErrPermanent marca uma falha que não adianta repetir (ex.: violação de
+// constraint, dado inválido). O consumidor descarta o evento na hora.
+var ErrPermanent = errors.New("falha permanente")
+
+// Permanent embrulha err como ErrPermanent (errors.Is continua achando err).
+func Permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", ErrPermanent, err)
+}
 
 type Stream struct {
 	rdb     *redis.Client
@@ -189,12 +209,42 @@ func (s *Stream) dispatch(ctx context.Context, group string, m redis.XMessage, p
 		return
 	}
 	if err := handler(ctx, e); err != nil {
+		if s.giveUp(ctx, group, m.ID, err) {
+			if s.log != nil {
+				s.log.Error("event stream: evento descartado (falha permanente ou repetida demais)",
+					"group", group, "event", e.Name, "session", e.Session, "id", e.ID, "err", err)
+			}
+			s.rdb.XAck(context.Background(), streamKey, group, m.ID)
+			return
+		}
 		if s.log != nil {
 			s.log.Warn("event stream: handler falhou, vai reprocessar", "group", group, "event", e.Name, "err", err)
 		}
 		return // sem XACK -> pendente -> claimStale reprocessa
 	}
 	s.rdb.XAck(context.Background(), streamKey, group, m.ID)
+}
+
+// giveUp decide se o evento deve ser descartado: falha marcada como
+// permanente, ou a maxFailures-ésima falha deste evento neste grupo (contador
+// no Redis, compartilhado entre nós; expira em 24 h).
+func (s *Stream) giveUp(ctx context.Context, group, msgID string, err error) bool {
+	if errors.Is(err, ErrPermanent) {
+		return true
+	}
+	key := "wa:evfail:" + group + ":" + msgID
+	n, rerr := s.rdb.Incr(ctx, key).Result()
+	if rerr != nil {
+		return false // sem Redis não dá pra contar: segue reprocessando
+	}
+	if n == 1 {
+		s.rdb.Expire(ctx, key, 24*time.Hour)
+	}
+	if n >= maxFailures {
+		s.rdb.Del(ctx, key)
+		return true
+	}
+	return false
 }
 
 func (s *Stream) claimStale(ctx context.Context, group, consumer string, patterns []string, handler func(context.Context, Event) error, run func([]redis.XMessage)) {

@@ -29,7 +29,13 @@ func New(db *store.Store, log *slog.Logger, nodeID string) *Consumer {
 // ate o contexto ser cancelado. XACK so no sucesso: falha do Postgres deixa
 // o evento pendente e ele e reprocessado.
 func (c *Consumer) Run(ctx context.Context, stream *events.Stream) {
-	stream.Consume(ctx, "inbox", c.nodeID, []string{"message.*"}, 4, c.handle)
+	stream.Consume(ctx, "inbox", c.nodeID, []string{"message.*"}, 4, func(ctx context.Context, e events.Event) error {
+		err := c.handle(ctx, e)
+		if store.IsPermanent(err) {
+			return events.Permanent(err) // ex.: sessão apagada com evento ainda no stream
+		}
+		return err
+	})
 }
 
 func (c *Consumer) handle(ctx context.Context, e events.Event) error {
