@@ -3,6 +3,7 @@ package leads
 import (
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestExtractSource_AdReferral(t *testing.T) {
@@ -85,5 +86,24 @@ func TestPreviewAndHelpers(t *testing.T) {
 	}
 	if !tsOf("2026-08-30T12:00:00Z").Equal(time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)) {
 		t.Fatal("tsOf rfc3339")
+	}
+}
+
+func TestTruncKeepsUTF8Valid(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"olá", 3, "ol"},        // "á" tem 2 bytes: não corta no meio
+		{"oi 👍 tudo", 5, "oi "}, // emoji de 4 bytes
+		{"ação", 4, "aç"},
+		{"curto", 140, "curto"},
+		{"a\xffb", 10, "ab"}, // byte inválido na origem some
+	} {
+		got := trunc(c.in, c.n)
+		if got != c.want || !utf8.ValidString(got) {
+			t.Errorf("trunc(%q, %d) = %q, quero %q", c.in, c.n, got, c.want)
+		}
 	}
 }

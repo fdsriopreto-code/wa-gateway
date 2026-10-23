@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Source é a atribuição de origem de um lead, montada no 1º contato.
@@ -94,10 +95,16 @@ func decode(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// trunc corta em até n bytes sem partir caractere no meio: s[:n] cru deixava
+// meio "ã"/emoji no fim e o Postgres recusava ("invalid byte sequence for
+// encoding UTF8"), travando o evento em reprocessamento infinito.
 func trunc(s string, n int) string {
-	s = strings.TrimSpace(s)
+	s = strings.ToValidUTF8(strings.TrimSpace(s), "")
 	if len(s) <= n {
 		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
 	}
 	return s[:n]
 }

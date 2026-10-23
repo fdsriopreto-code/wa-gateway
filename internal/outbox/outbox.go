@@ -10,6 +10,7 @@ package outbox
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
@@ -154,7 +155,7 @@ func (q *Queue) Enqueue(ctx context.Context, j Job, override *Pace, extraDelay t
 		asynq.Retention(24*time.Hour),
 	)
 	if _, err := q.client.EnqueueContext(ctx, task); err != nil {
-		if err == asynq.ErrDuplicateTask || err == asynq.ErrTaskIDConflict {
+		if errors.Is(err, asynq.ErrDuplicateTask) || errors.Is(err, asynq.ErrTaskIDConflict) {
 			return runAt, nil
 		}
 		return time.Time{}, err

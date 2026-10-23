@@ -8,6 +8,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -197,7 +198,7 @@ func (d *Dispatcher) enqueue(ctx context.Context, e events.Event, metadata map[s
 	)
 	_ = backoff // reservado: politica custom de backoff por webhook
 	if _, err := d.client.EnqueueContext(ctx, task, asynq.TaskID(deliveryID)); err != nil {
-		if err == asynq.ErrDuplicateTask || err == asynq.ErrTaskIDConflict {
+		if errors.Is(err, asynq.ErrDuplicateTask) || errors.Is(err, asynq.ErrTaskIDConflict) {
 			return nil // ja enfileirado numa passada anterior
 		}
 		d.log.Error("enqueue webhook", "err", err)
