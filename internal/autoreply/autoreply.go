@@ -7,6 +7,7 @@ package autoreply
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -115,7 +116,7 @@ func (r *Responder) send(ctx context.Context, sess, chat, text string) error {
 			Kind:    outbox.KindText,
 			Args:    outbox.Args{ChatID: chat, Text: text},
 		}, nil, 0)
-		if err == asynq.ErrDuplicateTask || err == asynq.ErrTaskIDConflict {
+		if errors.Is(err, asynq.ErrDuplicateTask) || errors.Is(err, asynq.ErrTaskIDConflict) {
 			return nil
 		}
 		return err
