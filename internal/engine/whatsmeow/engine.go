@@ -317,6 +317,11 @@ func (e *Engine) handleEvent(raw any) {
 		rp := normalizeReceipt(ev, e.wantRaw())
 		e.emitID(ackEventID(rp), "message.ack", rp)
 		return
+	case *waEvents.HistorySync:
+		// o blob de histórico tem MBs (todas as conversas): ia inteiro pro
+		// Redis Stream e pra todo webhook "*". Só o resumo, salvo rawEvents.
+		e.emit(events.HistorySync, historySummary(ev, e.wantRaw()))
+		return
 	}
 
 	name, payload := translate(raw)

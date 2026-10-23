@@ -1,178 +1,174 @@
+<div align="center">
+
 # wa-gateway
 
-![ci](https://github.com/fdsriopreto-code/wa-gateway/actions/workflows/ci.yml/badge.svg)
+**API de WhatsApp gratuita e open source, em Go.**
+Multi-sessão, multi-tenant, com webhooks, console web, node para n8n e servidor MCP para agentes de IA.
 
-API HTTP multi-sessão de WhatsApp em Go. Reescrita enxuta inspirada no
-teardown de Evolution API e WAHA — ver `../repos-analise/blueprint-wa-api-go.html`.
+*Free, open-source, self-hosted WhatsApp HTTP API written in Go — a lightweight alternative to Evolution API and WAHA.*
 
-**Stack:** Go · [whatsmeow](https://github.com/tulir/whatsmeow) · PostgreSQL (fonte de verdade)
-· Redis (cache · fila · locks · pub/sub) · chi · asynq.
+[![ci](https://github.com/fdsriopreto-code/wa-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/fdsriopreto-code/wa-gateway/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](go.mod)
+[![License: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg)](LICENSE)
+[![PRs welcome](https://img.shields.io/badge/PRs-bem--vindos-brightgreen.svg)](#contribuindo)
 
-## Documentação
+[Começo rápido](#-começo-rápido) · [Recursos](#-recursos) · [Integrações](#-integrações) · [Endpoints](#-endpoints) · [Documentação](#-documentação) · [English](#-in-english)
 
-| Doc | Pra quê |
-|---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | mapa dos pacotes, ciclo de request/evento/sessão, multi-nó, config, como estender |
-| [docs/MULTITENANT.md](docs/MULTITENANT.md) | **SaaS multi-tenant**: isolamento por chave, anti-SSRF, dimensionamento (1000 números), anti-ban (proxy, digitando) |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | o que já roda, o que falta, o que **não** vale a pena (com o porquê) |
-| [docs/MCP.md](docs/MCP.md) | servidor MCP: ligar num agente, do zero ao "oi" só por MCP, as ferramentas |
-| [docs/CLOUD.md](docs/CLOUD.md) | motor **Cloud API oficial** da Meta: setup, webhook, botões/listas/templates |
-| [docs/OTP.md](docs/OTP.md) | **código de verificação** de número (estilo Verify): `send` / `verify`, limites, template |
-| [docs/CRM.md](docs/CRM.md) | **Leads / CRM**: métricas de conversa por contato + origem (anúncio Click-to-WhatsApp, UTM, click ids), `GET/PATCH /leads` |
-| `/docs` (no ar) | Swagger UI · `/openapi.json` é gerado de `internal/httpapi/spec.go` |
+</div>
 
-## Estado — Fase 1 (MVP)
+---
 
-| Pronto | Item |
-|---|---|
-| ✅ | Config por env, logs estruturados (`slog`), `/health`, `/metrics` (Prometheus) |
-| ✅ | Postgres com migrações embarcadas (goose) |
-| ✅ | Redis: locks de posse de sessão, cache, pub/sub |
-| ✅ | Barramento de eventos in-process com match por wildcard |
-| ✅ | Engine `whatsmeow` — **tradução de todos os eventos** (mapeados + fallback `engine.*`) |
-| ✅ | `SessionManager`: ciclo de vida, lock de posse (base p/ multi-nó), restore no boot |
-| ✅ | Webhook: envelope estilo WAHA, HMAC-SHA256, entrega durável via asynq/Redis com retry |
-| ✅ | WebSocket `/ws` best-effort, filtro por sessão + wildcard de eventos |
-| ✅ | Auth por API key (chave-mestra de env + tabela `api_keys` com Argon2id) |
-| ✅ | REST: sessões (CRUD + start/stop/logout/restart), QR, `sendText`, `sendImage` |
-| ✅ | Fase 2 — envio: `sendFile`, `sendVideo`, `sendAudio` (nota de voz), `sendLocation`, `sendContact` |
-| ✅ | Fase 2 — mensagens: `reaction`, `deleteMessage`, `editMessage`, `sendSeen`, `presence` (typing/recording) |
-| ✅ | Fase 2 — contatos: checar número, info de perfil, foto de perfil |
-| ✅ | Fase 2 — grupos: listar, info, criar, sair, participantes (add/remove/promote/demote), nome, tópico, invite link, entrar por link |
-| ✅ | Fase 2 — fila de saída (`enqueue`): pacing por sessão via slot no Redis + jitter + limite diário (anti-ban) |
-| ✅ | Fase 2 — mídia S3/MinIO opcional (`MEDIA_BACKEND=s3`) + `GET /api/media/{id}` |
-| ✅ | Console web embarcado em `/` (sessões + QR, envio, grupos, contatos, fila, webhooks, eventos ao vivo, API keys) |
-| ✅ | Fase 2 — reply/menções/link preview, sticker, enquete, parear-por-código, perfil (`/me`, recado, presença, block), grupo (foto/announce/locked) |
-| ✅ | Fase 2 — persistência de mensagens/chats (`MESSAGE_STORE=on`): `/api/chats`, histórico, `/api/messages/{id}/download`, `forwardMessage` |
-| ⬜ | Fase 2 (resto): labels do Business |
-| ✅ | Integração: OpenAPI (`/openapi.json`) + Swagger (`/docs`), idempotência, `/ready`, teste de webhook |
-| ✅ | **Servidor MCP** (`POST /mcp`) — 12 ferramentas para agentes de IA |
-| ⬜ | Fase 3: multi-sessão por processo + roteamento entre nós + fan-out WS via Redis |
-| ⬜ | Fase 4 (resto): plugin NATS/AMQP, conector de bot, Chatwoot |
+## Por que o wa-gateway?
 
-## Rodar
+- 🪶 **Um binário só.** Go puro, console web embutido, sem Node, sem build de frontend. Sobe com `docker compose up`.
+- 📱 **Vários números no mesmo servidor.** Cada sessão é um WhatsApp; centenas por máquina, e cluster com vários nós quando precisar.
+- 🏢 **Pronto para SaaS.** Chave de API por cliente, isolada na sessão dele, com proteção contra SSRF e segredos cifrados no banco.
+- 🔌 **Fácil de integrar.** REST + OpenAPI/Swagger, webhooks com HMAC e retry, WebSocket, node oficial para **n8n** e **MCP** para agentes de IA.
+- 🔁 **Dois motores, a mesma API.** WhatsApp Web (multi-device, via QR ou código) ou a **Cloud API oficial da Meta**: troca na config, sem mudar a integração.
+- 💸 **Gratuito para sempre.** Licença MIT: use, modifique e venda o seu produto em cima.
 
-### Com Docker (tudo junto)
+> [!WARNING]
+> O motor padrão usa o protocolo do WhatsApp Web (biblioteca [whatsmeow](https://github.com/tulir/whatsmeow)), que **não é oficial**.
+> Este projeto não tem vínculo com o WhatsApp nem com a Meta. Uso abusivo (spam, disparo em massa frio) pode levar ao **bloqueio do número**.
+> Se o número não pode cair de jeito nenhum, use o motor [Cloud API oficial](docs/CLOUD.md).
+
+## 🚀 Começo rápido
+
+Precisa só de **Docker**.
 
 ```bash
+git clone https://github.com/fdsriopreto-code/wa-gateway.git
+cd wa-gateway
 docker compose up -d --build
-curl -s localhost:3000/health | jq
 ```
 
-### Local (Postgres + Redis via compose, app pelo Go)
+Abra **http://localhost:3000**, cole a chave `dev-master-key` em **Conexão**, crie uma sessão e escaneie o QR code com o celular (WhatsApp → Aparelhos conectados).
 
-```bash
-docker compose up -d postgres redis
-cp .env.example .env            # ajuste se precisar
-set -a && . ./.env && set +a    # carrega o .env no shell (bash)
-go run ./cmd/wa-gateway
-```
-
-No PowerShell, defina as variáveis com `$env:DATABASE_URL="..."` etc., ou use o compose.
-
-## Integração (n8n, agentes de IA, SaaS)
-
-- **OpenAPI 3** em **`GET /openapi.json`** e **Swagger UI** em **`GET /docs`** —
-  fonte de verdade da API. Autenticação: header `X-Api-Key`.
-- **Idempotência:** mande o header `Idempotency-Key: <uuid>` em qualquer `POST`.
-  Retentativas (timeout do n8n, retry do fluxo) devolvem a mesma resposta sem
-  reenviar a mensagem. Cache de 10 min por chave+API-key.
-- **Teste de webhook:** `POST /api/sessions/{session}/webhook/test` dispara um
-  evento sintético (`webhook.test`) para cada URL configurada e devolve o
-  status HTTP de cada uma — valide o receptor antes de ligar de verdade.
-- **Readiness:** `GET /ready` (200 só com o Postgres respondendo) para o
-  health check do orquestrador.
-
-### n8n — receber mensagens
-
-1. No n8n, crie um workflow com o node **Webhook** (method `POST`), copie a URL.
-2. No wa-gateway, salve na config da sessão:
-   `{"webhooks":[{"url":"<url-do-n8n>","events":["message"],"hmac":{"secret":"…"}}]}`
-   (ou use o editor visual no console → **Configurar**).
-3. Clique **Testar webhooks** — deve chegar um `webhook.test` no n8n.
-4. Cada mensagem recebida chega como o payload achatado (`id`, `chatId`,
-   `from`, `body`, `type`, `media`…). Assine `message` (só recebidas) ou
-   `message.any` (tudo).
-
-### n8n — enviar / chamar a API
-
-Use o node **HTTP Request**: `POST {BASE}/api/sendText`, header
-`X-Api-Key: {KEY}`, body JSON `{"session":"default","chatId":"…","text":"{{ $json.resposta }}"}`.
-Todos os endpoints estão no `/docs`. Para fluxos com retry, adicione o header
-`Idempotency-Key: {{ $json.messageId }}` (ou um uuid do fluxo).
-
-### n8n — node dedicado
-
-Em `clients/n8n/` tem um **node comunitário** (`n8n-nodes-wa-gateway`): dropdown
-de operações, converte binário do nó anterior pra base64 sozinho, e um
-**Trigger** que registra o webhook na sessão automaticamente ao ativar o
-workflow. Instala pelo painel (Community Nodes) ou build local — ver
-`clients/n8n/README.md`.
-
-### Agente de IA — servidor MCP
-
-`POST {BASE}/mcp` fala **Model Context Protocol** (JSON-RPC 2.0, transporte
-Streamable HTTP), autenticado por `X-Api-Key` ou `Authorization: Bearer <key>`.
-Métodos: `initialize`, `tools/list`, `tools/call`. Ferramentas expostas:
-
-`list_sessions` · `get_session` · `send_text` · `send_location` · `send_poll` ·
-`send_reaction` · `check_number` · `get_contact_info` · `get_profile_picture` ·
-`list_groups` · `list_chats` · `chat_history`.
-
-```bash
-curl -s $BASE/mcp -H "X-Api-Key: $KEY" -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
-       "params":{"name":"send_text","arguments":{"session":"default",
-                 "chatId":"5511999999999@s.whatsapp.net","text":"oi do agente"}}}'
-```
-
-## Fluxo mínimo
+Ou pela API:
 
 ```bash
 KEY=dev-master-key
 BASE=http://localhost:3000
 
-# 1. cria e inicia a sessão
+# 1. cria e inicia a sessão (com webhook)
 curl -s -XPOST $BASE/api/sessions -H "X-Api-Key: $KEY" -H 'content-type: application/json' \
   -d '{"name":"default","start":true,
-       "config":{"webhooks":[{"url":"https://webhook.site/xxxx","events":["*"],
-                              "hmac":{"secret":"s3cr3t"}}]}}'
+       "config":{"webhooks":[{"url":"https://webhook.site/xxxx","events":["message"]}]}}'
 
-# 2. pega o QR (repita até status = WORKING)
-curl -s $BASE/api/default/auth/qr -H "X-Api-Key: $KEY"
+# 2. QR code em imagem (abra no navegador) — ou /api/default/auth/qr em texto
+echo "$BASE/api/default/auth/qr.png?api_key=$KEY"
 
-# 3. envia texto
+# 3. envia uma mensagem
 curl -s -XPOST $BASE/api/sendText -H "X-Api-Key: $KEY" -H 'content-type: application/json' \
-  -d '{"session":"default","chatId":"5511999999999@s.whatsapp.net","text":"ola"}'
-
-# 4. stream de eventos em tempo real
-websocat "ws://localhost:3000/ws?session=default&events=*&api_key=$KEY"
+  -d '{"session":"default","chatId":"5511999999999@s.whatsapp.net","text":"Olá do wa-gateway 👋"}'
 ```
 
-## Console web
+> [!IMPORTANT]
+> Em produção troque a `API_KEY`, defina `SECRET_KEY` (`openssl rand -hex 32`) e veja todas as opções em [`.env.example`](.env.example).
 
-Servido em **`/`** pelo próprio binário (assets embarcados via `//go:embed`,
-sem build de frontend, sem Node). Abra `http://localhost:3000/`, vá em
-**Conexão**, cole a `API_KEY` (a master do `.env` serve) — fica só no
-`localStorage` do navegador.
+## ✨ Recursos
 
-Áreas: **Dashboard** · **Sessões** (criar, start/stop/logout/restart, **QR em
-imagem** com polling até conectar, editor de `config`) · **Console** de envio
-(todos os tipos, com toggle *enfileirar*) · **Grupos** (listar, criar, entrar,
-participantes, nome/tópico, invite link) · **Contatos** · **Fila de saída** ·
-**Webhooks entregues** · **Eventos ao vivo** (WebSocket) · **API keys**
-(gerar/revogar).
+<table>
+<tr><td valign="top" width="50%">
 
-Endpoints de apoio: `GET /api/stats`, `GET /api/deliveries?session=`,
-`GET /api/{session}/auth/qr.png`, `GET|POST /api/keys`, `DELETE /api/keys/{id}`.
+**Mensagens**
+- Texto, imagem, vídeo, áudio / nota de voz, documento, sticker
+- Localização, contato, enquete, reação
+- Responder, mencionar, link preview, encaminhar
+- Editar, apagar, marcar como lida, "digitando…"
+- Envio por **URL** ou base64
+- Botões / listas / templates (motor Cloud API)
 
-## Endpoints
+**Sessões**
+- Multi-sessão no mesmo processo
+- Pareamento por **QR** ou **código de 8 dígitos**
+- Reconexão automática, vigia de sessão travada
+- Monitor de saúde (`session.unhealthy`)
+- Perfil, recado, presença, bloqueio
 
-Corpo sempre inclui `session`. `chatId`/`jid` no formato `55...@s.whatsapp.net`
-ou `...@g.us`. Mídia via `data` (base64 puro ou data URI).
+**Grupos e contatos**
+- Criar, entrar por link, sair, participantes, admins
+- Nome, descrição, foto, só-admins
+- Checar número, info e foto de perfil
+- Etiquetas (WhatsApp Business)
 
-| Método | Rota | Corpo principal |
+</td><td valign="top" width="50%">
+
+**Integração**
+- REST + **OpenAPI 3** + Swagger UI (`/docs`)
+- **Webhooks** com HMAC-SHA256, retry e reenvio manual
+- **WebSocket** com eventos em tempo real
+- **Idempotência** (`Idempotency-Key`)
+- Callback de status por mensagem (`callbackUrl`)
+- Node para **n8n** e servidor **MCP** (32 ferramentas)
+
+**Recursos prontos**
+- **Fila anti-ban**: intervalo, jitter e limite diário por sessão
+- **Resposta automática** (horário comercial, palavras-chave)
+- **OTP**: envio e verificação de código
+- **CRM / Leads**: origem do contato (anúncio, UTM, click ids)
+- Histórico de chats e mensagens no Postgres
+- Mídia em S3 / MinIO / R2 com TTL
+- Transcrição de áudio e descrição de imagem (IA)
+
+**Produção**
+- Chaves de API com escopo por sessão (Argon2id)
+- Anti-SSRF, segredos cifrados (AES-256-GCM), rate limit
+- Cluster com roteamento entre nós e failover
+- Proxy por sessão, métricas Prometheus, logs estruturados
+
+</td></tr>
+</table>
+
+## 🔌 Integrações
+
+### n8n
+
+Node comunitário **`n8n-nodes-wa-gateway`** em [`clients/n8n`](clients/n8n): operações em dropdown, conversão de binário automática e um **Trigger** que registra o webhook sozinho ao ativar o workflow. Também funciona com o node **HTTP Request** + **Webhook** do n8n.
+
+### Agentes de IA (MCP)
+
+`POST /mcp` fala **Model Context Protocol**: conecte Claude, Cursor ou qualquer agente MCP e ele passa a ler e responder WhatsApp com 32 ferramentas (sessões, envio, contatos, grupos, histórico, leads, OTP…). Guia em [docs/MCP.md](docs/MCP.md).
+
+### Webhooks e eventos
+
+Toda ação do WhatsApp vira um evento `domínio.ação` (`message`, `message.ack`, `session.status`, `group.*`…), com assinatura por wildcard (`message.*`, `*`). Entrega durável com retry; payload enxuto e normalizado:
+
+```json
+{
+  "id": "A5010C563B75F82E469274B2B0606F5C",
+  "chatId": "5511999999999@s.whatsapp.net",
+  "from": "5511999999999@s.whatsapp.net",
+  "fromMe": false,
+  "pushName": "Maria",
+  "type": "text",
+  "timestamp": 1756499088,
+  "body": "Oi, tudo bem?"
+}
+```
+
+- **`message`**: só as recebidas (o que um bot assina) · **`message.any`**: todas · **`message.ack`**: entregue / lida / ouvida.
+- Endereços `@lid` são resolvidos para o telefone quando possível. O struct cru do whatsmeow só vem com `config.rawEvents: true`.
+- Com mídia guardada em S3, o evento ganha `media: {id, url, mimetype, size}`; com IA ligada, `transcript` / `imageCaption`.
+
+### SaaS multi-tenant
+
+Uma chave de API por cliente (`scopes: ["session:cliente-42"]`) só enxerga a sessão dele, não alcança a rede interna e não dispara campanha. Dimensionamento, cluster e anti-ban em [docs/MULTITENANT.md](docs/MULTITENANT.md).
+
+## 📡 Endpoints
+
+Autenticação: header `X-Api-Key` (ou `Authorization: Bearer`). O corpo dos envios sempre inclui `session`; `chatId` no formato `55...@s.whatsapp.net` ou `...@g.us`. A referência completa e interativa fica em **`/docs`** (Swagger).
+
+<details>
+<summary><b>Ver tabela de endpoints</b></summary>
+
+| Método | Rota | Uso |
 |---|---|---|
+| POST | `/api/sessions` | criar sessão (`name`, `config?`, `start?`) |
+| GET / PUT / DELETE | `/api/sessions/{session}` | ver / atualizar config / apagar |
+| POST | `/api/sessions/{session}/start` \| `/stop` \| `/logout` \| `/restart` | ciclo de vida |
+| GET | `/api/{session}/auth/qr` \| `/auth/qr.png` | QR code (texto ou imagem) |
+| POST | `/api/sessions/{session}/webhook/test` | dispara um `webhook.test` para validar o receptor |
 | POST | `/api/sendText` | `chatId, text, quotedId?, quotedParticipant?, mentions[]?, linkPreview?` |
 | POST | `/api/sendImage` \| `/api/sendFile` \| `/api/sendVideo` \| `/api/sendAudio` | `chatId, data, mimetype?, caption?, filename?, seconds?, gif?, voice?, quotedId?, mentions[]?` |
 | POST | `/api/sendSticker` | `chatId, data` (base64 `.webp`) |
@@ -209,122 +205,106 @@ ou `...@g.us`. Mídia via `data` (base64 puro ou data URI).
 | GET | `/api/messages/{id}/download?session=` | baixa a mídia de uma mensagem guardada |
 | POST | `/api/forwardMessage` | `{session, toChatId, messageId}` — encaminha (marca como encaminhada) |
 
-## Fila de saída (anti-ban)
+</details>
 
-Disparar várias mensagens seguidas do mesmo número é o caminho mais rápido pra
-um ban. Em vez de BullMQ (que é Node), a fila roda sobre **asynq** (mesma stack
-do webhook, Redis por baixo).
+### Fila anti-ban
 
-Qualquer endpoint de envio aceita `"enqueue": true` (e opcionalmente
-`"delay": "30s"`). Em vez de enviar na hora, o gateway **reserva um slot de
-tempo** no Redis pra aquela sessão: os jobs saem espaçados por
-`OUTBOX_MIN_INTERVAL` + jitter aleatório (`OUTBOX_JITTER`), **preservando a
-ordem de chegada**. Resposta: `202 { queued, jobId, runAt }`.
-
-```bash
-curl -s -XPOST $BASE/api/sendText -H "X-Api-Key: $KEY" -H 'content-type: application/json' \
-  -d '{"session":"default","chatId":"...@s.whatsapp.net","text":"1","enqueue":true}'
-# -> {"queued":true,"jobId":"...","runAt":"2026-08-29T18:40:03Z"}
-```
-
-Override por sessão em `config.outbox`:
+Qualquer envio aceita `"enqueue": true` (e `"delay": "30s"`). Em vez de enviar na hora, o gateway espaça os envios da sessão por intervalo mínimo + atraso aleatório, mantendo a ordem, com limite diário opcional. Ajuste por sessão em `config.outbox`:
 
 ```json
 {"outbox": {"minIntervalMs": 8000, "jitterMs": 4000, "dailyLimit": 800}}
 ```
 
-Batendo `dailyLimit` o enqueue responde `429 daily_limit`. Estado dos jobs em
-`GET /api/outbox?session=`.
+## 📚 Documentação
 
-## Mídia (opcional)
+| Doc | Conteúdo |
+|---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | pacotes, fluxo de envio e recebimento, cluster, **todas as variáveis de ambiente** |
+| [MULTITENANT.md](docs/MULTITENANT.md) | SaaS: isolamento por cliente, dimensionamento, anti-ban (proxy, "digitando…") |
+| [MCP.md](docs/MCP.md) | servidor MCP para agentes de IA |
+| [CLOUD.md](docs/CLOUD.md) | motor Cloud API oficial da Meta: setup, webhook, botões, listas, templates |
+| [OTP.md](docs/OTP.md) | código de verificação de número (`send` / `verify`) |
+| [CRM.md](docs/CRM.md) | leads e origem do contato (anúncio Click-to-WhatsApp, UTM, click ids) |
+| [ROADMAP.md](docs/ROADMAP.md) | o que já roda, o que falta e o que não vale a pena |
+| [clients/n8n](clients/n8n/README.md) | node comunitário do n8n |
 
-Desligado por padrão. Com `MEDIA_BACKEND=s3` usa um bucket S3-compatível
-(AWS S3, **MinIO**, Cloudflare R2). Sobe o MinIO junto com
-`docker compose --profile media up -d` e descomente os `S3_*` no compose.
+## 🏗️ Arquitetura
 
-`GET /api/media/{id}` faz stream do binário guardado; `?redirect=true` devolve
-302 pra uma URL temporária assinada (ou `S3_PUBLIC_BASE_URL` se setado).
-
-**Ingestão automática:** com o backend ligado, toda mídia **recebida** (imagem,
-áudio, vídeo, documento, sticker) é baixada, descriptografada
-(`whatsmeow.DownloadAny`) e guardada no bucket. O evento `message` ganha:
-
-```json
-"media": { "id": "<msgId>", "url": "/api/media/<msgId>", "mimetype": "image/webp", "size": 248526 }
+```mermaid
+flowchart LR
+  C[SaaS / n8n / Agente IA] -->|REST · MCP · WS| GW[wa-gateway]
+  GW <-->|WhatsApp Web ou Cloud API| WA[(WhatsApp)]
+  GW --> PG[(PostgreSQL)]
+  GW --> RD[(Redis)]
+  GW -->|webhooks| H[seu sistema]
+  GW -.->|opcional| S3[(S3 / MinIO)]
 ```
 
-O download roda inline no recebimento (timeout 45s); se falhar,
-`"media": { "error": "…" }`.
+**Stack:** Go · [whatsmeow](https://github.com/tulir/whatsmeow) · PostgreSQL (fonte da verdade) · Redis (locks, filas, stream de eventos, pub/sub) · [chi](https://github.com/go-chi/chi) · [asynq](https://github.com/hibiken/asynq).
 
-## Eventos
-
-Nome canônico no padrão `domínio.ação` (estilo WAHA). Os que têm mapeamento
-explícito estão em `internal/engine/whatsmeow/events.go`; **qualquer outro
-evento do whatsmeow passa como `engine.<tipo>`** — cobertura total.
-
-Assinatura por wildcard: `message.*`, `session.*`, `*`.
-
-### Mensagens — payload normalizado
-
-- **`message`** → só mensagens **recebidas** (não `fromMe`). É o que um bot assina.
-- **`message.any`** → todas, inclusive as que você mandou.
-- **`message.ack`** → recibos (`delivered` / `read` / `played` / `retry`).
-
-O payload é achatado. Endereços `@lid` são resolvidos para o telefone
-(`@s.whatsapp.net`) quando possível. O struct cru do whatsmeow **não vem por
-padrão** — ligue `config.rawEvents: true` na sessão para receber `raw`.
-
-```json
-{
-  "id": "A5010C563B75F82E469274B2B0606F5C",
-  "chatId": "5517996778746@s.whatsapp.net",
-  "chatLid": "161761386868832@lid",
-  "from": "5517996778746@s.whatsapp.net",
-  "fromMe": false,
-  "isGroup": false,
-  "pushName": "PRO TELHADOS RIO PRETO",
-  "type": "text",
-  "timestamp": 1756499088,
-  "body": "Oi",
-  "quotedId": "",
-  "mentions": []
-}
-```
-
-Campos extras conforme o caso: `media` (quando há mídia e o backend S3 está
-ligado), `reaction`, `chatLid`, `author` (em grupo), `hasMedia` / `mediaType`,
-e `raw` (só com `config.rawEvents: true`).
-
-`type`: `text` · `image` · `video` · `audio` · `document` · `sticker` ·
-`location` · `contact` · `reaction` · `poll` · `poll_vote` ·
-`buttons_response` · `list_response` · `unknown`.
-
-## Layout
+<details>
+<summary><b>Estrutura de pastas</b></summary>
 
 ```
-cmd/wa-gateway        entrypoint + wiring + shutdown
-internal/config       env
-internal/observability slog + prometheus
-internal/events       Event canônico + Bus in-process
-internal/store        pgx + migrações goose
-internal/cache        redis: locks, cache, pub/sub
-internal/auth         API key + Argon2id
-internal/engine       interface Engine + registry
-internal/engine/whatsmeow  implementação + tradução de eventos
-internal/session      SessionManager + config de runtime
-internal/webhook      envelope + HMAC + dispatcher asynq
-internal/outbox       fila de saída com pacing por sessão (asynq + slot no Redis)
-internal/media        armazenamento de mídia: Disabled (padrão) | S3/MinIO
-internal/ws           hub WebSocket
-internal/httpapi      chi router + handlers
-migrations            *.sql (goose, //go:embed)
+cmd/wa-gateway          entrypoint, wiring e shutdown
+internal/engine         interface Engine + motores whatsmeow e cloud
+internal/session        ciclo de vida das sessões, posse por lock, cluster
+internal/httpapi        REST, MCP, OpenAPI, console web
+internal/webhook        envelope, HMAC, entrega com retry
+internal/events         barramento in-process + Redis Stream durável
+internal/outbox         fila de saída anti-ban
+internal/netguard       proteção anti-SSRF das chamadas de saída
+internal/...            auth, store, cache, media, leads, otp, autoreply, ws
+migrations              SQL (goose, embarcado)
+clients/n8n             node comunitário do n8n
 ```
 
-## Notas
+</details>
 
-- O módulo se chama `wa-gateway` (path local). Para publicar, troque a
-  primeira linha do `go.mod` e rode `go mod tidy`.
-- `internal/engine/whatsmeow` é o único ponto acoplado à API do whatsmeow;
-  se algum símbolo mudar numa atualização, o ajuste fica contido ali.
-- As tabelas `whatsmeow_*` são criadas pelo `sqlstore` da própria engine no
-  mesmo banco; as migrações daqui só cuidam das tabelas de aplicação.
+## 🛠️ Desenvolvimento
+
+```bash
+docker compose up -d postgres redis
+cp .env.example .env
+set -a && . ./.env && set +a
+go run ./cmd/wa-gateway
+
+go test ./...     # testes
+go vet ./...      # análise estática
+```
+
+## Contribuindo
+
+Contribuições são muito bem-vindas: issues com bug ou ideia, PRs de correção, docs ou recurso novo.
+
+1. Faça um fork e crie uma branch.
+2. Rode `gofmt`, `go vet ./...` e `go test ./...` (o CI roda os mesmos).
+3. Abra o PR explicando o porquê da mudança.
+
+Para estender (endpoint novo, ferramenta MCP, motor novo), veja [ARCHITECTURE.md §10](docs/ARCHITECTURE.md#10-como-estender).
+
+Se o projeto te ajudou, **deixe uma ⭐**: é o que faz mais gente encontrar.
+
+## Licença
+
+[MIT](LICENSE): gratuito para uso pessoal e comercial.
+
+O motor padrão depende do [whatsmeow](https://github.com/tulir/whatsmeow) (MPL-2.0). WhatsApp é marca da Meta Platforms, Inc.; este projeto não é afiliado, endossado nem patrocinado por ela.
+
+---
+
+## 🌎 In English
+
+**wa-gateway** is a free, open-source, self-hosted **WhatsApp HTTP API** written in Go — a lightweight alternative to Evolution API and WAHA.
+
+- Multi-session (many WhatsApp numbers per server), multi-tenant API keys scoped per session
+- Two engines behind one API: WhatsApp Web multi-device (via [whatsmeow](https://github.com/tulir/whatsmeow), QR or pairing code) and the **official Meta Cloud API**
+- REST + OpenAPI/Swagger, signed webhooks with retries, WebSocket events, idempotency
+- **n8n community node** and a built-in **MCP server** for AI agents
+- Anti-ban outbound queue, per-session proxy, typing simulation, auto-reply, OTP, lead/CRM tracking
+- S3/MinIO media storage, AI audio transcription & image captioning
+- Single static binary with an embedded web console; PostgreSQL + Redis; horizontal clustering with failover
+
+Quick start: `docker compose up -d --build`, open http://localhost:3000, use API key `dev-master-key`, scan the QR code. Docs are in Portuguese under [`docs/`](docs); the API reference is served at `/docs`.
+
+> Not affiliated with WhatsApp or Meta. The default engine uses an unofficial protocol — abusive use may get numbers banned.
