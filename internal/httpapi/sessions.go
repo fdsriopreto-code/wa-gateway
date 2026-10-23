@@ -1,13 +1,16 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"wa-gateway/internal/auth"
+	"wa-gateway/internal/netguard"
 	"wa-gateway/internal/session"
 	"wa-gateway/internal/store"
 )
@@ -65,6 +68,30 @@ func (d Deps) listSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// checkWebhookURLs valida as URLs de webhook (e o proxy) da config contra
+// SSRF. O dispatcher entrega em background (sem o contexto do request), então
+// a regra estrita de chave de tenant precisa ser aplicada aqui, no cadastro.
+func checkWebhookURLs(ctx context.Context, raw json.RawMessage) error {
+	cfg, err := session.ParseConfig(raw)
+	if err != nil {
+		return err
+	}
+	if cfg.Proxy != "" {
+		if err := netguard.CheckProxyURL(ctx, cfg.Proxy, false); err != nil {
+			return fmt.Errorf("proxy: %w", err)
+		}
+	}
+	for _, wh := range cfg.Webhooks {
+		if wh.URL == "" {
+			continue
+		}
+		if err := netguard.CheckURL(ctx, wh.URL, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (d Deps) createSession(w http.ResponseWriter, r *http.Request) {
 	var req upsertSessionReq
 	if err := decode(r, &req); err != nil {
@@ -83,12 +110,16 @@ func (d Deps) createSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "config invalida: "+err.Error())
 		return
 	}
+	if err := checkWebhookURLs(r.Context(), req.Config); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_webhook_url", err.Error())
+		return
+	}
 	if _, err := d.Manager.Upsert(r.Context(), req.Name, req.Config); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	if req.Start {
-		if err := d.Manager.Start(r.Context(), req.Name); err != nil {
+		if err := d.Manager.Start(r.Context(), req.Name); err != nil && !errors.Is(err, session.ErrNodeFull) {
 			writeErr(w, http.StatusConflict, "start_failed", err.Error())
 			return
 		}
@@ -121,6 +152,10 @@ func (d Deps) updateSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "config invalida: "+err.Error())
 		return
 	}
+	if err := checkWebhookURLs(r.Context(), req.Config); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_webhook_url", err.Error())
+		return
+	}
 	if _, err := d.Manager.Upsert(r.Context(), name, req.Config); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -144,7 +179,10 @@ func (d Deps) deleteSession(w http.ResponseWriter, r *http.Request) {
 
 func (d Deps) startSession(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "session")
-	if err := d.Manager.Start(r.Context(), name); err != nil {
+	if err := d.Manager.Start(r.Context(), name); errors.Is(err, session.ErrNodeFull) {
+		writeNodeFull(w)
+		return
+	} else if err != nil {
 		status := http.StatusConflict
 		if errors.Is(err, store.ErrNotFound) {
 			status = http.StatusNotFound
@@ -179,7 +217,10 @@ func (d Deps) logoutSession(w http.ResponseWriter, r *http.Request) {
 func (d Deps) restartSession(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "session")
 	_ = d.Manager.Stop(r.Context(), name, false)
-	if err := d.Manager.Start(r.Context(), name); err != nil {
+	if err := d.Manager.Start(r.Context(), name); errors.Is(err, session.ErrNodeFull) {
+		writeNodeFull(w)
+		return
+	} else if err != nil {
 		writeErr(w, http.StatusConflict, "start_failed", err.Error())
 		return
 	}
@@ -213,4 +254,13 @@ func (d Deps) sessionQR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"code": code})
+}
+
+// writeNodeFull: este nó está no teto de sessões; a sessão ficou marcada
+// STARTING e um nó com folga a liga pelo ReconcileLoop.
+func writeNodeFull(w http.ResponseWriter) {
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":  "STARTING",
+		"message": "este nó está no limite de sessões; outro nó vai iniciar a sessão em até ~30s",
+	})
 }

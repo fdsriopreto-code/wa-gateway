@@ -90,6 +90,25 @@ type Config struct {
 	// = liga o roteamento de request entre nós (uma sessão vive num nó só;
 	// requests que chegam noutro são encaminhados pro dono). Vazio = off.
 	NodeAdvertiseURL string
+
+	// ---- multi-tenant / escala ----
+
+	// MaxSessionsPerNode: teto de sessões vivas por nó (0 = sem teto). Com
+	// vários nós, o excedente fica pros outros (ReconcileLoop).
+	MaxSessionsPerNode int
+	// EventsStreamMaxLen: teto aproximado do Redis Stream wa:events.
+	EventsStreamMaxLen int
+	// WAProxy: proxy padrão (socks5:// ou http://) das sessões sem config.proxy.
+	WAProxy string
+	// SSRFBlockPrivate: bloqueia webhook/callback/mídia por URL para loopback e
+	// redes privadas para TODAS as chaves (chave de tenant já é sempre estrita).
+	SSRFBlockPrivate bool
+	// SSRFAllowHosts: hosts/IPs/CIDRs internos liberados mesmo no modo estrito.
+	SSRFAllowHosts []string
+	// MetricsToken: bearer token exigido no /metrics (vazio = público).
+	MetricsToken string
+	// AllowScopedCampaigns: libera campanhas para chaves session:<nome>.
+	AllowScopedCampaigns bool
 }
 
 func Load() (Config, error) {
@@ -137,6 +156,14 @@ func Load() (Config, error) {
 		LogFormat:             env("LOG_FORMAT", "text"),
 		NodeID:                env("NODE_ID", ""),
 		NodeAdvertiseURL:      strings.TrimRight(env("NODE_ADVERTISE_URL", ""), "/"),
+
+		MaxSessionsPerNode:   envInt("MAX_SESSIONS_PER_NODE", 0),
+		EventsStreamMaxLen:   envInt("EVENTS_STREAM_MAXLEN", 100_000),
+		WAProxy:              env("WA_PROXY", ""),
+		SSRFBlockPrivate:     envBool("SSRF_BLOCK_PRIVATE", false),
+		SSRFAllowHosts:       splitCSV(env("SSRF_ALLOW_HOSTS", "")),
+		MetricsToken:         env("METRICS_TOKEN", ""),
+		AllowScopedCampaigns: envBool("ALLOW_SCOPED_CAMPAIGNS", false),
 	}
 
 	if c.DatabaseURL == "" {

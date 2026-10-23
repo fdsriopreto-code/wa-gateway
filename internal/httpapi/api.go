@@ -46,6 +46,10 @@ type Deps struct {
 	RateRPS     float64       // rate limit por chave de API; <=0 desliga
 	RateBurst   float64       // pico permitido; default 2x RPS (mín 10)
 	LeadStale   time.Duration // limiar de "lead sem resposta" p/ /leads/stats
+	// MetricsToken, se setado, exige "Authorization: Bearer <token>" no /metrics.
+	MetricsToken string
+	// ScopedCampaigns libera campanhas (envio em massa) p/ chaves session:<nome>.
+	ScopedCampaigns bool
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

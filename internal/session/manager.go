@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,8 @@ var (
 	ErrLocked      = errors.New("sessao pertence a outro no")
 	ErrNotActive   = errors.New("sessao nao esta ativa neste no")
 	ErrJIDConflict = errors.New("conflito de JID entre sessoes")
+	// ErrNodeFull: este nó já roda MAX_SESSIONS_PER_NODE sessões.
+	ErrNodeFull = errors.New("no cheio (MAX_SESSIONS_PER_NODE)")
 )
 
 type handle struct {
@@ -57,6 +60,9 @@ type Manager struct {
 	mediaTTL  time.Duration  // TTL global de midia (MEDIA_TTL); 0 = guarda pra sempre
 	enricher  *enrich.Client
 	enrichAll bool // MEDIA_ENRICH global; sessao sobrescreve com config.media.enrich
+
+	defaultProxy string // WA_PROXY: proxy padrão das sessões sem config.proxy
+	maxSessions  int    // MAX_SESSIONS_PER_NODE; 0 = sem teto
 
 	unhealthyAfter time.Duration // SESSION_UNHEALTHY_AFTER; 0 => 2m no MonitorHealth
 	healthMu       sync.RWMutex
@@ -257,8 +263,42 @@ func (m *Manager) LeadsEnabled(name string) bool {
 
 func (m *Manager) sessionBehavior(name string) engine.AutoBehavior {
 	c := m.sessionConfig(name)
-	return engine.AutoBehavior{AutoRead: c.AutoRead, AutoOnline: c.AutoOnline}
+	b := engine.AutoBehavior{AutoRead: c.AutoRead, AutoOnline: c.AutoOnline}
+	if t := c.Typing; t != nil && t.Enabled {
+		b.TypingMsPerChar, b.TypingMaxMs = t.MsPerChar, t.MaxMs
+		if b.TypingMsPerChar <= 0 {
+			b.TypingMsPerChar = 40
+		}
+		if b.TypingMaxMs <= 0 {
+			b.TypingMaxMs = 6000
+		}
+	}
+	return b
 }
+
+// sessionProxy: proxy da sessão (config.proxy) ou o global (WA_PROXY).
+func (m *Manager) sessionProxy(c Config) string {
+	if c.Proxy != "" {
+		return c.Proxy
+	}
+	return m.defaultProxy
+}
+
+// SetMaxSessions define o teto de sessões vivas neste nó (0 = sem teto).
+func (m *Manager) SetMaxSessions(n int) { m.maxSessions = n }
+
+// full diz se o nó já está no teto de sessões.
+func (m *Manager) full() bool {
+	if m.maxSessions <= 0 {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.running) >= m.maxSessions
+}
+
+// SetDefaultProxy define o proxy padrão (WA_PROXY) das sessões sem config.proxy.
+func (m *Manager) SetDefaultProxy(p string) { m.defaultProxy = p }
 
 func lockKey(name string) string { return "wa:lock:" + name }
 
@@ -313,8 +353,18 @@ func (m *Manager) Engine(name string) (engine.Engine, bool) {
 
 // Start adquire o lock de posse e inicia a engine. ctx e usado apenas para
 // as chamadas de setup; o ciclo de vida da engine e independente.
+//
+// Com o nó no teto (MAX_SESSIONS_PER_NODE), a sessão é marcada STARTING no
+// banco e o ReconcileLoop de um nó com folga a liga em até ~30 s; devolve
+// ErrNodeFull pra API avisar.
 func (m *Manager) Start(ctx context.Context, name string) error {
-	return m.start(ctx, name, false)
+	err := m.start(ctx, name, false)
+	if errors.Is(err, ErrNodeFull) {
+		if rec, gerr := m.store.GetSession(ctx, name); gerr == nil {
+			_ = m.store.SetSessionStatus(ctx, name, string(engine.StatusStarting), rec.JID)
+		}
+	}
+	return err
 }
 
 // start com recovering=true e usado so pelo RestoreOwned (boot): permite a
@@ -328,6 +378,10 @@ func (m *Manager) start(ctx context.Context, name string, recovering bool) error
 		return nil
 	}
 	m.mu.Unlock()
+
+	if m.full() {
+		return ErrNodeFull
+	}
 
 	rec, err := m.store.GetSession(ctx, name)
 	if err != nil {
@@ -397,6 +451,7 @@ func (m *Manager) start(ctx context.Context, name string, recovering bool) error
 		PollStore:  pollstore.New(m.cache),
 		StoredJID:  rec.JID,
 		Recovering: recovering,
+		Proxy:      m.sessionProxy(cfg),
 	})
 	if err != nil {
 		_ = m.cache.ReleaseLock(ctx, lockKey(name), m.nodeID)
@@ -508,6 +563,9 @@ func (m *Manager) RestoreOwned(ctx context.Context) {
 			case errors.Is(err, ErrLocked):
 				// outro no (ex.: o container antigo no deploy) ainda segura: o ReconcileLoop pega depois
 				m.log.Info("restore: sessao com outro no — fica para o reconcile", "session", r.Name)
+			case errors.Is(err, ErrNodeFull):
+				// fica pro ReconcileLoop de um nó com folga
+				m.log.Info("restore: nó no teto — sessão fica para outro nó", "session", r.Name)
 			default:
 				m.log.Warn("restore: falha ao iniciar", "session", r.Name, "err", err)
 			}
@@ -516,11 +574,21 @@ func (m *Manager) RestoreOwned(ctx context.Context) {
 	wg.Wait()
 }
 
+// reconcileBatch: quantas sessões órfãs um nó assume por rodada do
+// ReconcileLoop. Junto com o atraso proporcional à carga, espalha as sessões
+// entre os nós em vez de o primeiro a acordar pegar todas.
+const reconcileBatch = 25
+
 // ReconcileLoop liga, a cada 30 s, as sessoes que deveriam estar rodando (WORKING ou
 // STARTING no banco) e nao estao em nenhum no (lock livre). Cobre o deploy: o container
 // novo sobe com o antigo ainda vivo, o RestoreOwned encontra o lock ocupado e pula; o
 // antigo solta o lock ao desligar (sem mudar o status) e a sessao ficava orfa, parecendo
 // conectada sem receber nada (incidentes de 09/10 e 11/10).
+//
+// Balanceamento: antes de varrer, cada nó espera um tempo proporcional às
+// sessões que já roda (0–3 s aleatório + 15 ms por sessão, teto 15 s) e assume
+// no máximo reconcileBatch por rodada — o nó mais vazio chega primeiro nos locks.
+// Nó no teto (MAX_SESSIONS_PER_NODE) não assume nada.
 func (m *Manager) ReconcileLoop(ctx context.Context) {
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
@@ -530,11 +598,27 @@ func (m *Manager) ReconcileLoop(ctx context.Context) {
 			return
 		case <-t.C:
 		}
+		if m.full() {
+			continue
+		}
+		m.mu.RLock()
+		load := len(m.running)
+		m.mu.RUnlock()
+		wait := rand.N(3*time.Second) + time.Duration(min(load, 1000))*15*time.Millisecond
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
 		recs, err := m.store.ListSessions(ctx)
 		if err != nil {
 			continue
 		}
+		claimed := 0
 		for _, r := range recs {
+			if claimed >= reconcileBatch || m.full() {
+				break
+			}
 			if r.Status != string(engine.StatusWorking) && r.Status != string(engine.StatusStarting) {
 				continue
 			}
@@ -544,11 +628,15 @@ func (m *Manager) ReconcileLoop(ctx context.Context) {
 			if rodando {
 				continue
 			}
+			if owner, err := m.cache.LockOwner(ctx, lockKey(r.Name)); err == nil && owner != "" {
+				continue // viva em outro nó: nem tenta
+			}
 			switch err := m.start(ctx, r.Name, true); {
 			case err == nil:
+				claimed++
 				m.log.Warn("reconcile: sessao estava sem nenhum no rodando — religada", "session", r.Name)
-			case errors.Is(err, ErrLocked):
-				// rodando em outro no: ok
+			case errors.Is(err, ErrLocked), errors.Is(err, ErrNodeFull):
+				// outro nó pegou antes / nó encheu: ok
 			default:
 				m.log.Warn("reconcile: falha ao religar", "session", r.Name, "err", err)
 			}

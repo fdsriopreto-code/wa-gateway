@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"wa-gateway/internal/auth"
 	"wa-gateway/internal/engine"
+	"wa-gateway/internal/netguard"
 	"wa-gateway/internal/store"
 )
 
@@ -117,7 +119,17 @@ func (d Deps) mcpHandler(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, rpcErr(req.ID, -32602, "ferramenta desconhecida: "+p.Name))
 			return
 		}
+		if msg := mcpScopeDenied(ctx, p.Name, p.Arguments); msg != "" {
+			writeJSON(w, http.StatusOK, rpcOK(req.ID, map[string]any{
+				"content": []any{map[string]any{"type": "text", "text": "erro: " + msg}},
+				"isError": true,
+			}))
+			return
+		}
 		res, err := tool.run(ctx, d, p.Arguments)
+		if err == nil && p.Name == "list_sessions" {
+			res = filterScopedSessions(ctx, res)
+		}
 		if err != nil {
 			writeJSON(w, http.StatusOK, rpcOK(req.ID, map[string]any{
 				"content": []any{map[string]any{"type": "text", "text": "erro: " + err.Error()}},
@@ -132,6 +144,50 @@ func (d Deps) mcpHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, rpcErr(req.ID, -32601, "método não suportado: "+req.Method))
 	}
+}
+
+// mcpScopeDenied aplica o escopo da chave às ferramentas: o sessionScopeMW
+// não enxerga a sessão (ela vem dentro de params.arguments). Devolve a
+// mensagem de recusa, ou "" se pode.
+func mcpScopeDenied(ctx context.Context, tool string, args map[string]any) string {
+	p, ok := auth.FromContext(ctx)
+	if !ok || !p.SessionScoped() {
+		return ""
+	}
+	switch tool {
+	case "create_session":
+		return "chave com escopo por sessão não pode criar sessão nova"
+	case "list_sessions":
+		return "" // filtrado depois
+	}
+	for k, v := range args {
+		if !strings.EqualFold(k, "session") {
+			continue
+		}
+		if name, _ := v.(string); name == "" || name == "*" || !p.CanSession(name) {
+			return fmt.Sprintf("esta chave de API não tem acesso à sessão %v", v)
+		}
+	}
+	if s(args, "session") == "" {
+		return "informe 'session'"
+	}
+	return ""
+}
+
+// filterScopedSessions corta da listagem as sessões fora do escopo da chave.
+func filterScopedSessions(ctx context.Context, res any) any {
+	p, ok := auth.FromContext(ctx)
+	recs, isList := res.([]store.SessionRecord)
+	if !ok || !p.SessionScoped() || !isList {
+		return res
+	}
+	out := make([]store.SessionRecord, 0, len(recs))
+	for _, r := range recs {
+		if p.CanSession(r.Name) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 /* ---- ferramentas ---- */
@@ -231,6 +287,9 @@ var mcpTools = []mcpTool{
 			}
 			conf := map[string]any{}
 			if u := s(a, "webhookUrl"); u != "" {
+				if err := netguard.CheckURL(ctx, u, false); err != nil {
+					return nil, err
+				}
 				evs := splitComma(s(a, "events"))
 				if len(evs) == 0 {
 					evs = []string{"*"}
@@ -746,7 +805,7 @@ func fetchURL(ctx context.Context, url string, max int64) ([]byte, string, error
 	if err != nil {
 		return nil, "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := mediaHTTP.Do(req)
 	if err != nil {
 		return nil, "", err
 	}

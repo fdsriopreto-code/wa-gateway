@@ -32,6 +32,11 @@ func (d Deps) getMedia(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	if p, _ := auth.FromContext(r.Context()); !p.CanSession(rec.Session) {
+		// 404 e não 403: não confirma que o id existe em outra sessão
+		writeErr(w, http.StatusNotFound, "not_found", "midia nao encontrada")
+		return
+	}
 
 	if r.URL.Query().Get("redirect") == "true" {
 		url, err := d.Media.PresignedURL(r.Context(), rec.Ref, 15*time.Minute)

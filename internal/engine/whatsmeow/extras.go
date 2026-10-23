@@ -16,6 +16,7 @@ import (
 	"go.mau.fi/whatsmeow"
 
 	"wa-gateway/internal/engine"
+	"wa-gateway/internal/netguard"
 )
 
 // ctxInfo monta o ContextInfo comum (citacao + mencoes + encaminhada).
@@ -79,6 +80,9 @@ func parseJID(s string) (types.JID, error) {
 	return types.ParseJID(strings.TrimSpace(s))
 }
 
+// previewHTTP busca o link preview / thumbnail: a URL vem do texto do cliente.
+var previewHTTP = netguard.Client(10 * time.Second)
+
 var urlRe = regexp.MustCompile(`https?://[^\s]+`)
 
 // applyLinkPreview tenta buscar OG tags do primeiro link do texto (best-effort).
@@ -94,7 +98,7 @@ func (e *Engine) applyLinkPreview(ctx context.Context, etm *waProto.ExtendedText
 		return
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; wa-gateway link preview)")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := previewHTTP.Do(req)
 	if err != nil {
 		return
 	}
@@ -144,7 +148,7 @@ func fetchThumb(ctx context.Context, url string) []byte {
 	if err != nil {
 		return nil
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := previewHTTP.Do(req)
 	if err != nil {
 		return nil
 	}

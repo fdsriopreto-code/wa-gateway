@@ -13,6 +13,7 @@ teardown de Evolution API e WAHA — ver `../repos-analise/blueprint-wa-api-go.h
 | Doc | Pra quê |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | mapa dos pacotes, ciclo de request/evento/sessão, multi-nó, config, como estender |
+| [docs/MULTITENANT.md](docs/MULTITENANT.md) | **SaaS multi-tenant**: isolamento por chave, anti-SSRF, dimensionamento (1000 números), anti-ban (proxy, digitando) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | o que já roda, o que falta, o que **não** vale a pena (com o porquê) |
 | [docs/MCP.md](docs/MCP.md) | servidor MCP: ligar num agente, do zero ao "oi" só por MCP, as ferramentas |
 | [docs/CLOUD.md](docs/CLOUD.md) | motor **Cloud API oficial** da Meta: setup, webhook, botões/listas/templates |

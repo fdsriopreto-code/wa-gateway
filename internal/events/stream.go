@@ -42,6 +42,15 @@ func NewStream(rdb *redis.Client, log *slog.Logger) *Stream {
 	return s
 }
 
+// SetMaxLen troca o teto (aprox) do stream; <=0 mantém o atual. Com muitas
+// sessões, um teto baixo pode descartar eventos antes do webhook/inbox
+// consumirem se eles atrasarem.
+func (s *Stream) SetMaxLen(n int64) {
+	if s != nil && n > 0 {
+		s.maxLen = n
+	}
+}
+
 // Append enfileira o evento para escrita. Nao bloqueia de imediato; se o
 // buffer estiver cheio (Redis persistentemente lento), espera ate 200ms — o
 // emit vem do goroutine de eventos do whatsmeow, entao uma pausa curta e ok,

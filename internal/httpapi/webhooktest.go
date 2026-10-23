@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"wa-gateway/internal/netguard"
 	"wa-gateway/internal/session"
 	"wa-gateway/internal/webhook"
 )
@@ -43,7 +44,7 @@ func (d Deps) webhookTest(w http.ResponseWriter, r *http.Request) {
 		"payload":   map[string]any{"message": "wa-gateway: teste de webhook", "ok": true},
 	})
 
-	client := &http.Client{Timeout: 8 * time.Second}
+	client := netguard.Client(8 * time.Second)
 	type res struct {
 		URL    string `json:"url"`
 		Status int    `json:"status,omitempty"`

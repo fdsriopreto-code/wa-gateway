@@ -26,6 +26,19 @@ type Config struct {
 	OTP *OTPConfig `json:"otp,omitempty"`
 	// Leads: liga/desliga a coleta de metricas de CRM desta sessao (default on).
 	Leads *LeadsConfig `json:"leads,omitempty"`
+	// Proxy: socks5://user:senha@host:porta (ou http://) para a conexão desta
+	// sessão com o WhatsApp. Vazio = WA_PROXY global (ou direto). Cifrado em
+	// repouso como os outros secrets.
+	Proxy string `json:"proxy,omitempty"`
+	// Typing: simula "digitando..." antes de cada texto enviado.
+	Typing *TypingConfig `json:"typing,omitempty"`
+}
+
+// TypingConfig controla a simulação de digitação antes dos envios de texto.
+type TypingConfig struct {
+	Enabled   bool `json:"enabled"`
+	MsPerChar int  `json:"msPerChar,omitempty"` // default 40
+	MaxMs     int  `json:"maxMs,omitempty"`     // default 6000
 }
 
 // LeadsConfig controla a coleta de leads/CRM por sessao.
@@ -138,7 +151,7 @@ func ParseConfig(raw json.RawMessage) (Config, error) {
 }
 
 // MapSecrets aplica fn a todo campo sensível do JSON de config (HMAC secret
-// de webhook, accessToken e appSecret da Cloud API) e devolve o JSON
+// de webhook, accessToken e appSecret da Cloud API, URL do proxy) e devolve o JSON
 // reescrito. Usado para cifrar/decifrar em repouso. Config vazia ou sem
 // segredo volta igual (mesmo slice).
 func MapSecrets(raw json.RawMessage, fn func(string) string) json.RawMessage {
@@ -155,6 +168,10 @@ func MapSecrets(raw json.RawMessage, fn func(string) string) json.RawMessage {
 			c.Webhooks[i].HMAC.Secret = fn(c.Webhooks[i].HMAC.Secret)
 			touched = true
 		}
+	}
+	if c.Proxy != "" {
+		c.Proxy = fn(c.Proxy)
+		touched = true
 	}
 	if c.Cloud != nil {
 		if c.Cloud.AccessToken != "" {
