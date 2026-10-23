@@ -286,6 +286,12 @@ sequenceDiagram
       reprocessar não duplica entrega;
     - inbox: `SaveMessage` falhou → evento pendente → retry (o payload
       já round-trip por JSON; `bytesOf`/`i64` lidam com isso).
+    - **evento envenenado não gira pra sempre:** erro marcado com
+      `events.Permanent` (ex.: Postgres classe 22/23 — UTF-8 inválido, FK de
+      sessão já apagada, via `store.IsPermanent`) é descartado na hora; qualquer
+      outro erro é descartado na 20ª falha do mesmo evento no mesmo grupo
+      (contador `wa:evfail:<grupo>:<id>` no Redis, ~20 min). Descarte sai como
+      log `ERROR "evento descartado"`.
 - **`webhook.Dispatcher`**: consumidor do stream (grupo `webhook`, até 8 em
   paralelo), cache de config por sessão (TTL 5s), dedupe de entrega por URL.
   Cada webhook vira uma task asynq (`TaskID = deliveryID`, retry exponencial,
