@@ -403,7 +403,7 @@ Falha de S3 no boot **não derruba** o app: degrada pra "sem mídia" e loga.
   "outbox": { "minIntervalMs": 4000, "jitterMs": 2000, "dailyLimit": 500 },
   "media": { "store": true, "ttl": "168h", "enrich": true },  // store:false = não guarda; ttl "0" = nunca apaga; enrich sobrescreve MEDIA_ENRICH
   "cloud": { "phoneNumberId": "…", "accessToken": "…" }, // usa o motor Cloud API
-  "rawEvents": false,   // inclui o struct cru do whatsmeow em payload.raw
+  "rawEvents": false,   // inclui o struct cru do whatsmeow em payload.raw (history.sync sai só com resumo sem isso)
   "autoRead": false,    // marca recebidas como lidas (recibo azul)
   "autoOnline": false,  // mantém presença "available" após conectar
   "proxy": "socks5://user:senha@host:1080", // proxy desta sessão (cifrado em repouso); vazio = WA_PROXY

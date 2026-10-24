@@ -172,3 +172,25 @@ func connState(raw any) (engine.Status, bool) {
 	}
 	return "", false
 }
+
+// historySummary resume um HistorySync (contagens + progresso). O struct
+// cru só entra com config.rawEvents.
+func historySummary(ev *waEvents.HistorySync, withRaw bool) map[string]any {
+	out := map[string]any{}
+	if d := ev.Data; d != nil {
+		msgs := 0
+		for _, c := range d.GetConversations() {
+			msgs += len(c.GetMessages())
+		}
+		out["syncType"] = d.GetSyncType().String()
+		out["chunkOrder"] = d.GetChunkOrder()
+		out["progress"] = d.GetProgress()
+		out["conversations"] = len(d.GetConversations())
+		out["messages"] = msgs
+		out["pushnames"] = len(d.GetPushnames())
+	}
+	if withRaw {
+		out["raw"] = ev
+	}
+	return out
+}
