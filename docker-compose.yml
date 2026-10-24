@@ -28,23 +28,25 @@ services:
       timeout: 3s
       retries: 10
 
-  # opcional: sobe so com `docker compose --profile media up -d`
-  minio:
-    image: minio/minio:latest
+  # opcional: storage de mídia S3-compatível (https://github.com/fdsriopreto-code/gostore-s3).
+  # sobe so com `docker compose --profile media up -d`
+  # console: http://localhost:9001 (login com GOSTORE_ROOT_USER / _PASSWORD)
+  gostore:
+    image: ghcr.io/fdsriopreto-code/gostore-s3:0.9.0
     profiles: ["media"]
-    command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      GOSTORE_ROOT_USER: gostoreadmin
+      GOSTORE_ROOT_PASSWORD: troque-esta-senha-forte
+      GOSTORE_REGION: us-east-1
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - miniodata:/data
+      - gostoredata:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD", "/usr/local/bin/gostore", "version"]
+      interval: 10s
+      timeout: 5s
       retries: 10
 
   wa-gateway:
@@ -66,10 +68,10 @@ services:
       OUTBOX_JITTER: "2s"
       # descomente para ligar a midia (precisa do profile "media"):
       # MEDIA_BACKEND: "s3"
-      # S3_ENDPOINT: "minio:9000"
+      # S3_ENDPOINT: "gostore:9000"
       # S3_BUCKET: "wa-media"
-      # S3_ACCESS_KEY: "minioadmin"
-      # S3_SECRET_KEY: "minioadmin"
+      # S3_ACCESS_KEY: "gostoreadmin"
+      # S3_SECRET_KEY: "troque-esta-senha-forte"
       # S3_PATH_STYLE: "true"
     ports:
       - "3000:3000"
@@ -77,4 +79,4 @@ services:
 volumes:
   pgdata:
   redisdata:
-  miniodata:
+  gostoredata:

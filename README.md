@@ -108,7 +108,7 @@ curl -s -XPOST $BASE/api/sendText -H "X-Api-Key: $KEY" -H 'content-type: applica
 - **OTP**: envio e verificação de código
 - **CRM / Leads**: origem do contato (anúncio, UTM, click ids)
 - Histórico de chats e mensagens no Postgres
-- Mídia em S3 / MinIO / R2 com TTL
+- Mídia no [gostore](https://github.com/fdsriopreto-code/gostore-s3) ou qualquer S3 (AWS, R2, MinIO) com TTL
 - Transcrição de áudio e descrição de imagem (IA)
 
 **Produção**
@@ -215,6 +215,26 @@ Qualquer envio aceita `"enqueue": true` (e `"delay": "30s"`). Em vez de enviar n
 {"outbox": {"minIntervalMs": 8000, "jitterMs": 4000, "dailyLimit": 800}}
 ```
 
+### Mídia com o gostore
+
+Fotos, áudios e documentos recebidos podem ser guardados automaticamente num storage S3-compatível. O par recomendado é o **[gostore](https://github.com/fdsriopreto-code/gostore-s3)**: servidor S3 em Go, um binário, sem banco, licença Apache 2.0. Qualquer outro S3 (AWS, Cloudflare R2, MinIO) também funciona.
+
+```bash
+docker compose --profile media up -d   # sobe o gostore junto (console em :9001)
+```
+
+```env
+MEDIA_BACKEND=s3
+S3_ENDPOINT=gostore:9000
+S3_BUCKET=wa-media            # criado sozinho no primeiro uso
+S3_ACCESS_KEY=gostoreadmin
+S3_SECRET_KEY=troque-esta-senha-forte
+S3_USE_SSL=false
+S3_PATH_STYLE=true
+```
+
+Com isso o evento `message` ganha `media: {id, url, mimetype, size}`, `GET /api/media/{id}` serve o arquivo (ou um link assinado com `?redirect=true`) e `MEDIA_TTL` apaga as mídias antigas sozinho.
+
 ## 📚 Documentação
 
 | Doc | Conteúdo |
@@ -237,7 +257,7 @@ flowchart LR
   GW --> PG[(PostgreSQL)]
   GW --> RD[(Redis)]
   GW -->|webhooks| H[seu sistema]
-  GW -.->|opcional| S3[(S3 / MinIO)]
+  GW -.->|opcional| S3[(gostore / S3)]
 ```
 
 **Stack:** Go · [whatsmeow](https://github.com/tulir/whatsmeow) · PostgreSQL (fonte da verdade) · Redis (locks, filas, stream de eventos, pub/sub) · [chi](https://github.com/go-chi/chi) · [asynq](https://github.com/hibiken/asynq).
@@ -302,7 +322,7 @@ O motor padrão depende do [whatsmeow](https://github.com/tulir/whatsmeow) (MPL-
 - REST + OpenAPI/Swagger, signed webhooks with retries, WebSocket events, idempotency
 - **n8n community node** and a built-in **MCP server** for AI agents
 - Anti-ban outbound queue, per-session proxy, typing simulation, auto-reply, OTP, lead/CRM tracking
-- S3/MinIO media storage, AI audio transcription & image captioning
+- Media storage on [gostore](https://github.com/fdsriopreto-code/gostore-s3) or any S3-compatible service, AI audio transcription & image captioning
 - Single static binary with an embedded web console; PostgreSQL + Redis; horizontal clustering with failover
 
 Quick start: `docker compose up -d --build`, open http://localhost:3000, use API key `dev-master-key`, scan the QR code. Docs are in Portuguese under [`docs/`](docs); the API reference is served at `/docs`.

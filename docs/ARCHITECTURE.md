@@ -74,7 +74,7 @@ pub/sub de WebSocket. **Um binário** — o console web é embutido via `//go:em
 | `internal/inbox` | consome o barramento → persiste mensagens/chats/acks | `inbox.Consumer.Run` |
 | `internal/outbox` | fila de saída com *pacing* anti-ban (slot por sessão no Redis) | `outbox.NewQueue`, `outbox.NewWorker` |
 | `internal/ws` | WebSocket + fan-out de eventos entre nós via Redis pub/sub | `ws.NewHub`, `Hub.Run` |
-| `internal/media` | armazenamento S3/MinIO opcional + `MediaSink` + coletor de TTL | `media.NewS3`, `media.NewSink` |
+| `internal/media` | armazenamento S3-compatível opcional (gostore, AWS, R2, MinIO) + `MediaSink` + coletor de TTL | `media.NewS3`, `media.NewSink` |
 | `internal/httpapi` | REST, `/mcp`, `/openapi.json`, `/docs`, console SPA | `httpapi.NewRouter` |
 | `internal/auth` | API key (chave-mestra + tabela `api_keys` com Argon2id) + middleware | `auth.New` |
 | `internal/observability` | logger slog, métricas Prometheus | `NewLogger`, `metrics.go` |
@@ -371,7 +371,7 @@ Tudo por env var. Padrões entre `()`.
 | `MEDIA_GC_INTERVAL` (`5m`) | varredura do coletor de mídia vencida |
 | `MEDIA_ENRICH` (`false`) | transcreve áudio (`transcript`) e descreve imagem (`imageCaption`) no payload do evento. Override: `config.media.enrich`. Precisa de `AI_API_KEY` |
 | `AI_BASE_URL` (`https://api.openai.com/v1`) `AI_API_KEY` `AI_TRANSCRIBE_MODEL` (`whisper-1`) `AI_VISION_MODEL` (`gpt-4o-mini`) | API compatível com OpenAI p/ o enriquecimento |
-| `S3_ENDPOINT` `S3_REGION` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_USE_SSL` `S3_PATH_STYLE` `S3_PUBLIC_BASE_URL` | config S3/MinIO |
+| `S3_ENDPOINT` `S3_REGION` `S3_BUCKET` `S3_ACCESS_KEY` `S3_SECRET_KEY` `S3_USE_SSL` `S3_PATH_STYLE` `S3_PUBLIC_BASE_URL` | config do storage S3-compatível (gostore, AWS, R2, MinIO) |
 | `CORS_ORIGINS` (CSV) | libera origens no browser |
 | `ACCESS_LOG` (`false`) | log de acesso HTTP |
 | `RATE_LIMIT_RPS` (`20`) / `RATE_LIMIT_BURST` (`0`→2×RPS, mín 10) | token bucket por chave de API (Redis). `0` desliga. Chave-mestra isenta. `429` + `Retry-After` |
