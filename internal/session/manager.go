@@ -24,9 +24,15 @@ import (
 	"wa-gateway/internal/store"
 )
 
-const (
-	lockTTL     = 30 * time.Second
+const lockTTL = 30 * time.Second
+
+// var (e nao const) para os testes encurtarem os tempos.
+var (
 	lockRefresh = 10 * time.Second
+	// reconcileEvery: de quanto em quanto tempo cada no procura sessao que deveria estar
+	// rodando e nao esta em nenhum no. Com um no caido, o lock dele expira em lockTTL e o
+	// proximo giro de um no vivo assume a sessao: no pior caso lockTTL + reconcileEvery.
+	reconcileEvery = 15 * time.Second
 )
 
 var (
@@ -579,7 +585,7 @@ func (m *Manager) RestoreOwned(ctx context.Context) {
 // entre os nós em vez de o primeiro a acordar pegar todas.
 const reconcileBatch = 25
 
-// ReconcileLoop liga, a cada 30 s, as sessoes que deveriam estar rodando (WORKING ou
+// ReconcileLoop liga, a cada reconcileEvery, as sessoes que deveriam estar rodando (WORKING ou
 // STARTING no banco) e nao estao em nenhum no (lock livre). Cobre o deploy: o container
 // novo sobe com o antigo ainda vivo, o RestoreOwned encontra o lock ocupado e pula; o
 // antigo solta o lock ao desligar (sem mudar o status) e a sessao ficava orfa, parecendo
@@ -590,7 +596,7 @@ const reconcileBatch = 25
 // no máximo reconcileBatch por rodada — o nó mais vazio chega primeiro nos locks.
 // Nó no teto (MAX_SESSIONS_PER_NODE) não assume nada.
 func (m *Manager) ReconcileLoop(ctx context.Context) {
-	t := time.NewTicker(30 * time.Second)
+	t := time.NewTicker(reconcileEvery)
 	defer t.Stop()
 	for {
 		select {
@@ -634,7 +640,8 @@ func (m *Manager) ReconcileLoop(ctx context.Context) {
 			switch err := m.start(ctx, r.Name, true); {
 			case err == nil:
 				claimed++
-				m.log.Warn("reconcile: sessao estava sem nenhum no rodando — religada", "session", r.Name)
+				// tambem e o "failover": a sessao era de um no que caiu e este no assumiu
+				m.log.Warn("reconcile: sessao estava sem nenhum no rodando — assumida por este no", "session", r.Name, "node", m.nodeID)
 			case errors.Is(err, ErrLocked), errors.Is(err, ErrNodeFull):
 				// outro nó pegou antes / nó encheu: ok
 			default:
@@ -654,8 +661,13 @@ func (m *Manager) refreshLock(name string, stop <-chan struct{}) {
 		case <-t.C:
 			ok, err := m.cache.RenewLock(context.Background(), lockKey(name), m.nodeID, lockTTL)
 			if err != nil || !ok {
-				m.log.Error("perdi o lock da sessao, parando", "session", name, "err", err)
-				go m.Stop(context.Background(), name, false)
+				// Para AQUI (o WhatsApp nao aceita o mesmo numero em dois lugares), mas sem
+				// gravar "parada" no banco: o estado desejado continua WORKING, e o
+				// ReconcileLoop (deste no ou de outro) religa quando o lock estiver livre.
+				// Antes gravava STOPPED: uma piscada do Redis derrubava o numero ate alguem
+				// religar na mao, e nenhum outro no assumia.
+				m.log.Error("perdi o lock da sessao, parando aqui (o reconcile religa)", "session", name, "err", err)
+				go func() { _ = m.stop(context.Background(), name, false, false) }()
 				return
 			}
 		}

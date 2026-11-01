@@ -316,6 +316,16 @@ sequenceDiagram
 
 - **Posse por lock (Redis):** cada sessão viva num nó só. `start` num nó que não
   tem a sessão e cujo lock está com outro → `ErrLocked`.
+- **Failover (assumir sessão de nó caído):** o `ReconcileLoop` de cada nó gira a
+  cada `reconcileEvery` (15 s) e liga as sessões `WORKING`/`STARTING` que não
+  estão em nenhum nó. Um nó que morre para de renovar o lock; em até `lockTTL`
+  (30 s) ele expira e um nó vivo assume no giro seguinte (mais o atraso de
+  balanceamento). Quem **perde** o lock (outro nó ficou com ele, ou o Redis
+  falhou) para a engine só localmente, **sem gravar `STOPPED`**: o estado
+  desejado segue `WORKING` e o reconcile religa (01/11/2026 — antes uma piscada
+  do Redis deixava o número parado até alguém religar na mão). Requisito: todos
+  os nós no **mesmo** Postgres e Redis; sem réplica deles, o failover cobre a
+  queda de um nó, não a da máquina do banco.
 - **Eventos:** todo nó escreve no mesmo Redis Stream `wa:events`. Os grupos
   `webhook` / `inbox` distribuem o processamento entre os nós — cada evento
   cai em **um** nó, e se esse nó morre no meio, outro reclama a pendência.
