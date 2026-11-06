@@ -53,6 +53,9 @@ func normalizeMessage(evt *waEvents.Message, includeRaw bool) map[string]any {
 	if ci := contextInfo(msg); ci != nil {
 		if ci.GetStanzaID() != "" {
 			out["quotedId"] = ci.GetStanzaID()
+			if q := quotedOf(ci); q != nil {
+				out["quoted"] = q
+			}
 		}
 		if len(ci.GetMentionedJID()) > 0 {
 			out["mentions"] = ci.GetMentionedJID()
@@ -92,6 +95,23 @@ func normalizeMessage(evt *waEvents.Message, includeRaw bool) map[string]any {
 		out["location"] = map[string]any{"latitude": l.GetDegreesLatitude(), "longitude": l.GetDegreesLongitude(), "live": true}
 	}
 	return out
+}
+
+// quotedOf devolve a mensagem que a pessoa marcou para responder: tipo, texto e
+// (se for midia) os campos p/ baixar depois, sem depender do store.
+func quotedOf(ci *waProto.ContextInfo) map[string]any {
+	m := unwrapMessage(ci.GetQuotedMessage())
+	if m == nil {
+		return nil
+	}
+	kind, body := classifyMessage(m)
+	q := map[string]any{"id": ci.GetStanzaID(), "type": kind}
+	putIf(q, "body", body)
+	putIf(q, "participant", ci.GetParticipant())
+	if mm := mediaMetaOf(m); mm != nil {
+		q["mediaMeta"] = mm
+	}
+	return q
 }
 
 // normalizeReceipt achata um recibo de entrega/leitura.
